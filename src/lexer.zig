@@ -44,13 +44,13 @@ pub const Lexer = struct {
     }
 
     fn make_source_span(self: Self, len: usize) SourceSpan {
-        return .{ .line = self.line, .col = self.col, .start = self.cursor - len, .end = self.cursor };
+        return .{ .line = self.line, .col = self.col - len + 1, .start = self.cursor - len, .end = self.cursor };
     }
 
     pub fn next_token(self: *Self) Token {
         self.read_whitespaces();
         if (!self.has_more_tokens()) {
-            return .{ .kind = .eof, .lexeme = "", .span = self.make_source_span(1) };
+            return .{ .kind = .eof, .lexeme = "eof", .span = self.make_source_span(1) };
         }
 
         const current = self.peek();
@@ -97,14 +97,17 @@ pub const Lexer = struct {
         while (self.has_more_tokens() and self.peek() != '"' and self.peek() != '\n')
             self.advance();
 
+        const lexeme = self.source.code[start..self.cursor];
+        const token: Token = .{ .kind = .string_literal, .lexeme = lexeme, .span = self.make_source_span(lexeme.len) };
         if (self.peek() != '"') {
-            // TODO: add unterminated string diagnostic.
+            self.bag.add_lex_unterminated_string(token) catch |err| {
+                std.debug.panic("unexpected error has occured.\n {}", .{err});
+            };
+        } else {
+            self.advance(); // eating end string quote symbol
         }
 
-        const lexeme = self.source.code[start..self.cursor];
-        self.advance(); // eating end string quote symbol
-
-        return .{ .kind = .string_literal, .lexeme = lexeme, .span = self.make_source_span(lexeme.len) };
+        return token;
     }
 
     fn read_number(self: *Self) Token {
@@ -134,7 +137,7 @@ pub const Lexer = struct {
 
         const token: Token = .{ .kind = TokenKind.get_symbol_kind(lexeme), .lexeme = lexeme, .span = self.make_source_span(1) };
         if (token.kind == .invalid) {
-            self.bag.add_unexpected_symbol(token) catch |err| {
+            self.bag.add_lex_unexpected_symbol(token) catch |err| {
                 std.debug.panic("unexpected error has occured.\n {}", .{err});
             };
         }

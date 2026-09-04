@@ -20,14 +20,14 @@ pub const Source = struct {
 
     pub fn init(allocator: std.mem.Allocator, name: []const u8, code: []const u8) !Source {
         var lines_span = std.ArrayList(SourceLineSpan).empty;
-
         var start: usize = 0;
         for (0..code.len) |cursor| {
-            if (code[cursor] == '\n') {
-                try lines_span.append(allocator, .{ .line = lines_span.items.len + 1, .start = start, .end = cursor - 1 });
+            if (code[cursor] != '\n')
+                continue;
 
-                start = cursor + 1;
-            }
+            const end = if (cursor > 0) cursor - 1 else cursor;
+            try lines_span.append(allocator, .{ .line = lines_span.items.len + 1, .start = start, .end = end });
+            start = cursor + 1;
         }
 
         if (start < code.len) {

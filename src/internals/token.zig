@@ -112,6 +112,24 @@ pub const TokenKind = enum {
     pub fn get_kind_name(self: Self) []const u8 {
         return @tagName(self);
     }
+
+    pub fn get_unary_operator_priority(kind: Self) usize {
+        return switch(kind) {
+            .plus_symbol, .minus_symbol, .not_keyword => 6,
+            else => 0,
+        };
+    }
+
+    pub fn get_binary_operator_priority(kind: Self) usize {
+        return switch (kind) {
+            .star_symbol, .slash_symbol, .percentage_symbol => 5,
+            .plus_symbol, .minus_symbol => 4,
+            .gt_symbol, .gte_symbol, .lt_symbol, .lte_symbol, .eqeq_symbol, .neq_symbol => 3,
+            .or_keyword => 2,
+            .and_keyword => 1,
+            else => 0,
+        };
+    }
 };
 
 pub const Token = struct {
