@@ -86,7 +86,7 @@ pub const Expr = union(ExprKind) {
 
     const Self = @This();
 
-    pub fn get_span(self: *const Self) SourceSpan {
+    pub fn getSourceSpan(self: *const Self) SourceSpan {
         return switch (self.*) {
             .literal_expr => |e| {
                 return e.span;
@@ -129,6 +129,7 @@ pub const StmtKind = enum {
     block_stmt,
     while_stmt,
     for_stmt,
+    invalid_stmt,
 };
 
 pub const TypeAnnotation = struct {
@@ -218,10 +219,11 @@ pub const Stmt = union(StmtKind) {
     block_stmt: BlockStmt,
     while_stmt: WhileStmt,
     for_stmt: ForStmt,
+    invalid_stmt: Token,
 
     const Self = @This();
 
-    pub fn get_span(self: *const Self) SourceSpan {
+    pub fn getSourceSpan(self: *const Self) SourceSpan {
         return switch (self.*) {
             .variable_decl_stmt => |s| {
                 return s.span;
@@ -250,6 +252,9 @@ pub const Stmt = union(StmtKind) {
             .block_stmt => |s| {
                 return s.span;
             },
+            .invalid_stmt => |s| {
+                return s.span;
+            }
         };
     }
 };

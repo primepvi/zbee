@@ -41,7 +41,7 @@ pub const Source = struct {
         return .{ .name = name, .code = code, .lines_span = lines_span };
     }
 
-    pub fn init_from_file(allocator: std.mem.Allocator, io: std.Io, path: []const u8) !Source {
+    pub fn initFromFile(allocator: std.mem.Allocator, io: std.Io, path: []const u8) !Source {
         const dir: std.Io.Dir = .cwd();
         const buffer = try dir.readFileAlloc(io, path, allocator, .unlimited);
         return Source.init(allocator, path, buffer);

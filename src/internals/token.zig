@@ -101,26 +101,26 @@ pub const TokenKind = enum {
 
     const Self = @This();
 
-    pub fn get_keyword_kind(keyword: []const u8) TokenKind {
+    pub fn getKeywordKind(keyword: []const u8) TokenKind {
         return keywords_map.get(keyword) orelse .identifier;
     }
 
-    pub fn get_symbol_kind(symbol: []const u8) TokenKind {
+    pub fn getSymbolKind(symbol: []const u8) TokenKind {
         return symbols_kind.get(symbol) orelse .invalid;
     }
 
-    pub fn get_kind_name(self: Self) []const u8 {
+    pub fn getKindName(self: Self) []const u8 {
         return @tagName(self);
     }
 
-    pub fn get_unary_operator_priority(kind: Self) usize {
+    pub fn getUnaryOperatorPriority(kind: Self) usize {
         return switch(kind) {
             .plus_symbol, .minus_symbol, .not_keyword => 6,
             else => 0,
         };
     }
 
-    pub fn get_binary_operator_priority(kind: Self) usize {
+    pub fn getBinaryOperatorPriority(kind: Self) usize {
         return switch (kind) {
             .star_symbol, .slash_symbol, .percentage_symbol => 5,
             .plus_symbol, .minus_symbol => 4,

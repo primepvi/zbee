@@ -23,10 +23,16 @@ pub const Lexer = struct {
     const Self = @This();
 
     pub fn init(source: *const Source, bag: *DiagnosticBag) Self {
-        return .{ .line = 1, .col = 1, .cursor = 0, .source = source, .bag = bag };
+        return .{
+            .line = 1,
+            .col = 1,
+            .cursor = 0,
+            .source = source,
+            .bag = bag,
+        };
     }
 
-    pub fn has_more_tokens(self: Self) bool {
+    pub fn hasMoreTokens(self: Self) bool {
         return self.cursor < self.source.code.len;
     }
 
@@ -43,34 +49,43 @@ pub const Lexer = struct {
         self.col += 1;
     }
 
-    fn make_source_span(self: Self, len: usize) SourceSpan {
-        return .{ .line = self.line, .col = self.col - len + 1, .start = self.cursor - len, .end = self.cursor };
+    fn makeSourceSpan(self: Self, len: usize) SourceSpan {
+        return .{
+            .line = self.line,
+            .col = self.col - len + 1,
+            .start = self.cursor - len,
+            .end = self.cursor,
+        };
     }
 
-    pub fn next_token(self: *Self) Token {
-        self.read_whitespaces();
-        if (!self.has_more_tokens()) {
-            return .{ .kind = .eof, .lexeme = "eof", .span = self.make_source_span(1) };
+    pub fn nextToken(self: *Self) !Token {
+        self.readWhitespaces();
+        if (!self.hasMoreTokens()) {
+            return .{
+                .kind = .eof,
+                .lexeme = "eof",
+                .span = self.makeSourceSpan(1),
+            };
         }
 
         const current = self.peek();
         if (ascii.isAlphabetic(current)) {
-            return self.read_keyword();
+            return self.readKeyword();
         }
 
         if (current == '"') {
-            return self.read_string();
+            return try self.readString();
         }
 
         if (ascii.isDigit(current)) {
-            return self.read_number();
+            return self.readNumber();
         }
 
-        return self.read_symbol();
+        return try self.readSymbol();
     }
 
-    fn read_whitespaces(self: *Self) void {
-        while (self.has_more_tokens() and ascii.isWhitespace(self.peek())) {
+    fn readWhitespaces(self: *Self) void {
+        while (self.hasMoreTokens() and ascii.isWhitespace(self.peek())) {
             if (self.peek() == '\n') {
                 self.cursor += 1;
                 self.line += 1;
@@ -81,28 +96,35 @@ pub const Lexer = struct {
         }
     }
 
-    fn read_keyword(self: *Self) Token {
+    fn readKeyword(self: *Self) Token {
         const start = self.cursor;
-        while (self.has_more_tokens() and (ascii.isAlphanumeric(self.peek()) or self.peek() == '_'))
+        while (self.hasMoreTokens() and (ascii.isAlphanumeric(self.peek()) or self.peek() == '_'))
             self.advance();
 
         const lexeme = self.source.code[start..self.cursor];
-        return .{ .kind = TokenKind.get_keyword_kind(lexeme), .lexeme = lexeme, .span = self.make_source_span(lexeme.len) };
+        return .{
+            .kind = TokenKind.getKeywordKind(lexeme),
+            .lexeme = lexeme,
+            .span = self.makeSourceSpan(lexeme.len),
+        };
     }
 
-    fn read_string(self: *Self) Token {
+    fn readString(self: *Self) !Token {
         self.advance(); // eating start string quote symbol
 
         const start = self.cursor;
-        while (self.has_more_tokens() and self.peek() != '"' and self.peek() != '\n')
+        while (self.hasMoreTokens() and self.peek() != '"' and self.peek() != '\n')
             self.advance();
 
         const lexeme = self.source.code[start..self.cursor];
-        const token: Token = .{ .kind = .string_literal, .lexeme = lexeme, .span = self.make_source_span(lexeme.len) };
+        const token: Token = .{
+            .kind = .string_literal,
+            .lexeme = lexeme,
+            .span = self.makeSourceSpan(lexeme.len),
+        };
+
         if (self.peek() != '"') {
-            self.bag.add_lex_unterminated_string(token) catch |err| {
-                std.debug.panic("unexpected error has occured.\n {}", .{err});
-            };
+            try self.bag.errorLexerUnterminatedString(token);
         } else {
             self.advance(); // eating end string quote symbol
         }
@@ -110,36 +132,46 @@ pub const Lexer = struct {
         return token;
     }
 
-    fn read_number(self: *Self) Token {
+    fn readNumber(self: *Self) Token {
         const start = self.cursor;
-        while (self.has_more_tokens() and ascii.isDigit(self.peek()))
+        while (self.hasMoreTokens() and ascii.isDigit(self.peek()))
             self.advance();
 
         const lexeme = self.source.code[start..self.cursor];
-        return .{ .kind = .number_literal, .lexeme = lexeme, .span = self.make_source_span(lexeme.len) };
+        return .{
+            .kind = .number_literal,
+            .lexeme = lexeme,
+            .span = self.makeSourceSpan(lexeme.len),
+        };
     }
 
-    fn read_symbol(self: *Self) Token {
+    fn readSymbol(self: *Self) !Token {
         if (self.cursor + 1 < self.source.code.len) {
             const lexeme = self.source.code[self.cursor .. self.cursor + 2];
-            const kind = TokenKind.get_symbol_kind(lexeme);
+            const kind = TokenKind.getSymbolKind(lexeme);
 
             if (kind != .invalid) {
                 self.advance();
                 self.advance();
 
-                return .{ .kind = kind, .lexeme = lexeme, .span = self.make_source_span(2) };
+                return .{
+                    .kind = kind,
+                    .lexeme = lexeme,
+                    .span = self.makeSourceSpan(2),
+                };
             }
         }
 
         const lexeme = self.source.code[self.cursor .. self.cursor + 1];
         self.advance();
 
-        const token: Token = .{ .kind = TokenKind.get_symbol_kind(lexeme), .lexeme = lexeme, .span = self.make_source_span(1) };
+        const token: Token = .{
+            .kind = TokenKind.getSymbolKind(lexeme),
+            .lexeme = lexeme,
+            .span = self.makeSourceSpan(1),
+        };
         if (token.kind == .invalid) {
-            self.bag.add_lex_unexpected_symbol(token) catch |err| {
-                std.debug.panic("unexpected error has occured.\n {}", .{err});
-            };
+            try self.bag.errorLexerUnexpectedSymbol(token);
         }
 
         return token;

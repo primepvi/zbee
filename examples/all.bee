@@ -2,7 +2,6 @@ const name = "Bee"
 let a = true
 let b = false
 
-let age = 18
 let status = when age >= 18
     then "+18" otherwise "-18"
 
@@ -22,3 +21,8 @@ for let i = 0, i < 10, i = i + 1 do
     if i % 2 == 0 -> echo "par"
     else echo "impar"
 end
+
+while i < 10 do
+end
+
+
