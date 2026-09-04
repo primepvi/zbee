@@ -1,8 +1,8 @@
 const std = @import("std");
-const Lexer = @import("lexer.zig").Lexer;
-const Parser = @import("parser.zig").Parser;
-const Token = @import("internals/token.zig").Token;
-const Source = @import("internals/source.zig").Source;
+const Lexer = @import("Lexer.zig").Lexer;
+const Parser = @import("Parser.zig").Parser;
+const Token = @import("internals/Token.zig").Token;
+const Source = @import("internals/Source.zig").Source;
 const DiagnosticBag = @import("internals/diagnostics.zig").DiagnosticBag;
 
 pub fn main(init: std.process.Init) !void {
@@ -16,10 +16,10 @@ pub fn main(init: std.process.Init) !void {
     defer lexer_bag.deinit();
     
     var lexer = Lexer.init(&source, &lexer_bag);
-    var current: ?Token = null;
-    while (current != null and current.?.kind != .eof) {
-        current = try lexer.nextToken();
-        try tokens.append(arena.allocator(), current.?);
+    while (true) {
+        const current = try lexer.nextToken();
+        try tokens.append(arena.allocator(), current);
+        if (current.kind == .eof) break;
     }
 
     if (lexer_bag.hasErrors()) {

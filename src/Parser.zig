@@ -1,10 +1,10 @@
 const std = @import("std");
 
-const source_mod = @import("internals/source.zig");
+const source_mod = @import("internals/Source.zig");
 const Source = source_mod.Source;
 const SourceSpan = source_mod.SourceSpan;
 
-const token_mod = @import("internals/token.zig");
+const token_mod = @import("internals/Token.zig");
 const Token = token_mod.Token;
 const TokenKind = token_mod.TokenKind;
 
@@ -15,7 +15,6 @@ const Expr = ast_mod.Expr;
 const TypeAnnotation = ast_mod.TypeAnnotation;
 const FunctionDeclParam = ast_mod.FunctionDeclParam;
 
-const Lexer = @import("lexer.zig").Lexer;
 const DiagnosticBag = @import("internals/diagnostics.zig").DiagnosticBag;
 
 pub const Parser = struct {

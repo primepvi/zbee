@@ -1,10 +1,10 @@
 const std = @import("std");
 
-const source_mod = @import("source.zig");
+const source_mod = @import("Source.zig");
 const Source = source_mod.Source;
 const SourceSpan = source_mod.SourceSpan;
 
-const token_mod = @import("token.zig");
+const token_mod = @import("Token.zig");
 const Token = token_mod.Token;
 
 pub const ExprKind = enum {

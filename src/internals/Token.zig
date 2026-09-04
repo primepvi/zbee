@@ -1,5 +1,5 @@
 const std = @import("std");
-const SourceSpan = @import("source.zig").SourceSpan;
+const SourceSpan = @import("Source.zig").SourceSpan;
 
 pub const TokenKind = enum {
     // keywords

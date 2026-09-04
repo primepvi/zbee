@@ -1,11 +1,11 @@
 const std = @import("std");
 const ascii = std.ascii;
 
-const source_mod = @import("internals/source.zig");
+const source_mod = @import("internals/Source.zig");
 const Source = source_mod.Source;
 const SourceSpan = source_mod.SourceSpan;
 
-const token_mod = @import("internals/token.zig");
+const token_mod = @import("internals/Token.zig");
 const Token = token_mod.Token;
 const TokenKind = token_mod.TokenKind;
 
