@@ -2,7 +2,7 @@ const std = @import("std");
 const TypeAnnotation = @import("ast.zig").TypeAnnotation;
 
 pub const FunctionType = struct {
-    param_types: []const Type,
+    param_types: std.ArrayList(Type),
     return_type: *Type,
 };
     
@@ -12,8 +12,8 @@ pub const TypeKind = union(enum) {
     string_t,
     invalid_t,
     void_t,
-
-    function: FunctionType,
+    null_t,
+    function_t: FunctionType,
 };
 
 pub const Type = struct {
@@ -41,6 +41,43 @@ pub const Type = struct {
             .nullable = annotation.nullable,
         };                     
     }
+
+    pub fn invalid() Self {
+        return .{
+            .kind = .invalid_t,
+            .nullable = false,
+        };    
+    }
+
+    pub fn empty() Self {
+        return .{
+            .kind = .void_t,
+            .nullable = false,
+        };    
+    }
+
+    pub fn isEmpty(self: *Self) bool {
+        return switch(self.*) {
+            .void_t => true,
+            else => false,
+        };
+    }
+
+    pub fn isInvalid(self: *Self) bool {
+        return switch(self.*) {
+            .invalid_t => true,
+            else => false,
+        };
+    }
+
+    pub fn isAssignableTo(self: *Self, expected: Self) bool {
+        const is_equal = std.mem.eql(TypeKind, self.kind, expected.kind);
+        if (expected.nullable and (is_equal or self.kind == .null_t)) {
+            return true;
+        } else {
+            return is_equal and !self.nullable;
+        }
+    }
 };
 
 pub const SymbolKind = enum {
@@ -63,6 +100,15 @@ pub const FunctionSymbol = struct {
 pub const Symbol = union(SymbolKind) {
     variable: VariableSymbol,
     function: FunctionSymbol,
+
+    const Self = @This();
+    
+    pub fn getName(self: *const Self) []const u8 {
+        return switch(self.*) {
+            .variable => |v| v.name,
+            .function => |f| f.name,
+        };
+    }
 };
 
 pub const ScopeKind = enum {
@@ -74,5 +120,23 @@ pub const ScopeKind = enum {
 pub const SymbolTable = struct {
     scope: ScopeKind,
     env: std.StringHashMap(Symbol),
-    parent: *SymbolTable
+    parent: ?*SymbolTable,
+
+    const Self = @This();
+
+    pub fn init(scope: ScopeKind, parent: ?*SymbolTable) Self {
+        return .{
+            .scope = scope,
+            .env = .empty,
+            .parent = parent,
+        };
+    }
+
+    pub fn scopeHas(self: *const Self, name: []const u8) bool {
+        return self.env.get(name) != null;
+    }
+
+    pub fn put(self: *Self, symbol: Symbol) !void {
+        try self.env.put(symbol.getName(), symbol);
+    }
 };
