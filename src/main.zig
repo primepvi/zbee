@@ -42,6 +42,13 @@ pub fn main(init: std.process.Init) !void {
         std.debug.print("{}\n", .{stmt});
     }
 
-    var checker = TypeChecker.init(arena.allocator(), &ast);
+    var checker_bag = DiagnosticBag.init(arena.allocator(), &source);
+    defer checker_bag.deinit();
+    
+    var checker = TypeChecker.init(arena.allocator(), &ast, &checker_bag);
     try checker.check();
+    if (checker_bag.hasErrors()) {
+        try checker_bag.debug();
+        std.process.exit(1);
+    }
 }

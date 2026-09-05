@@ -28,6 +28,7 @@ pub const Type = struct {
         .{ "string", .string_t },
         .{ "void", .void_t },
         .{ "null", .null_t },
+        .{ "invalid", .invalid_t },
     });
 
     pub fn fromLexeme(lexeme: []const u8) Self {
@@ -68,6 +69,18 @@ pub const Type = struct {
             .kind = .void_t,
             .nullable = false,
         };
+    }
+    
+    pub fn toString(self: *const Self, allocator: std.mem.Allocator) ![]const u8 {
+        const name = @tagName(self.kind);
+        return std.fmt.allocPrint(
+            allocator,
+            "{s}{s}",
+            .{
+                name[0..name.len-2],
+                if (self.nullable) "?" else "",
+            },
+        );
     }
 
     pub fn isEmpty(self: *const Self) bool {
@@ -195,12 +208,11 @@ pub const SymbolTable = struct {
     }
 
     pub fn get(self: *Self, name: []const u8) ?Symbol {
-        if (self.scopeHas(name)) {
-            return self.env.get(name);
-        } else if (self.parent != null) {
+        const symbol = self.env.get(name);
+        if (symbol == null and self.parent != null) {
             return self.parent.?.get(name);
-        } else {
-            return null;
         }
+
+        return symbol;
     }
 };

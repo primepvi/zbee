@@ -7,6 +7,8 @@ const SourceSpan = source_mod.SourceSpan;
 const token_mod = @import("Token.zig");
 const Token = token_mod.Token;
 
+const Type = @import("symbols.zig").Type;
+
 pub const DiagnosticLevel = enum {
     err,
     warning,
@@ -262,14 +264,13 @@ pub const DiagnosticBag = struct {
     }
 
     pub fn errorParserInvalidWhileStmtBody(self: *Self, keyword: Token, invalid: Token) !void {
-        
         const range: SourceSpan = .{
             .line = keyword.span.line,
             .col = keyword.span.col,
             .start = keyword.span.start,
-            .end = invalid.span.end,                
+            .end = invalid.span.end,
         };
-        
+
         const diagnostic: Diagnostic = .{
             .source = self.source,
             .message = "The 'while' statement expects an short body with '-> (statement)' or an block body with 'do (statements) end'.",
@@ -283,14 +284,13 @@ pub const DiagnosticBag = struct {
     }
 
     pub fn errorParserInvalidForStmtBody(self: *Self, keyword: Token, invalid: Token) !void {
-        
         const range: SourceSpan = .{
             .line = keyword.span.line,
             .col = keyword.span.col,
             .start = keyword.span.start,
-            .end = invalid.span.end,                
+            .end = invalid.span.end,
         };
-        
+
         const diagnostic: Diagnostic = .{
             .source = self.source,
             .message = "The 'for' statement expects an short body with '-> (statement)' or an block body with 'do (statements) end'.",
@@ -309,6 +309,210 @@ pub const DiagnosticBag = struct {
             .message = "The 'for' statement expects an 'variable declarement' in the 'init statement'.",
             .level = .err,
             .code = 206,
+            .range = span,
+            .emphasis = span,
+        };
+
+        try self.add(diagnostic);
+    }
+
+    pub fn errorCheckerTypeMismatch(self: *Self, span: SourceSpan, expected: Type, received: Type) !void {
+        var builder = std.Io.Writer.Allocating.init(self.allocator);
+        defer builder.deinit();
+        try builder.writer.print("expected type '{s}', but received type '{s}'.", .{ try expected.toString(self.allocator), try received.toString(self.allocator) });
+
+        const message = try builder.toOwnedSlice();
+        const diagnostic: Diagnostic = .{
+            .source = self.source,
+            .message = message,
+            .level = .err,
+            .code = 300,
+            .range = span,
+            .emphasis = span,
+        };
+
+        try self.add(diagnostic);
+    }
+
+    pub fn errorCheckerInvalidVoidUsage(self: *Self, span: SourceSpan, complement: []const u8) !void {
+        var builder = std.Io.Writer.Allocating.init(self.allocator);
+        defer builder.deinit();
+        try builder.writer.print("type 'void' cannot be used as '{s}'.", .{complement});
+
+        const message = try builder.toOwnedSlice();
+        const diagnostic: Diagnostic = .{
+            .source = self.source,
+            .message = message,
+            .level = .err,
+            .code = 301,
+            .range = span,
+            .emphasis = span,
+        };
+
+        try self.add(diagnostic);
+    }
+
+    pub fn errorCheckerIdentifierAlreadyDeclared(self: *Self, span: SourceSpan, identifier: []const u8) !void {
+        var builder = std.Io.Writer.Allocating.init(self.allocator);
+        defer builder.deinit();
+        try builder.writer.print("already has a declaration with identifier '{s}'.", .{identifier});
+
+        const message = try builder.toOwnedSlice();
+        const diagnostic: Diagnostic = .{
+            .source = self.source,
+            .message = message,
+            .level = .err,
+            .code = 302,
+            .range = span,
+            .emphasis = span,
+        };
+
+        try self.add(diagnostic);
+    }
+
+    pub fn errorCheckerNonGlobalScopeFunctionDecl(self: *Self, span: SourceSpan) !void {
+        const diagnostic: Diagnostic = .{
+            .source = self.source,
+            .message = "function declarations is only allowed in global scope.",
+            .level = .err,
+            .code = 303,
+            .range = span,
+            .emphasis = span,
+        };
+
+        try self.add(diagnostic);
+    }
+
+    pub fn errorCheckerInvalidTypeAnnotation(self: *Self, range: SourceSpan, emphasis: SourceSpan) !void {
+        const diagnostic: Diagnostic = .{
+            .source = self.source,
+            .message = "attempt to annotate an identifier with invalid type.",
+            .level = .err,
+            .code = 304,
+            .range = range,
+            .emphasis = emphasis,
+        };
+
+        try self.add(diagnostic);
+    }
+
+    pub fn errorCheckerVoidControlPaths(self: *Self, span: SourceSpan) !void {
+        const diagnostic: Diagnostic = .{
+            .source = self.source,
+            .message = "some function control paths dont return value.",
+            .level = .err,
+            .code = 305,
+            .range = span,
+            .emphasis = span,
+        };
+
+        try self.add(diagnostic);
+    }
+
+    pub fn errorCheckerInvalidReturnUsage(self: *Self, span: SourceSpan) !void {
+        const diagnostic: Diagnostic = .{
+            .source = self.source,
+            .message = "attempt to return value outside function block.",
+            .level = .err,
+            .code = 306,
+            .range = span,
+            .emphasis = span,
+        };
+
+        try self.add(diagnostic);
+    }
+
+    pub fn errorCheckerUndefinedIdentifier(self: *Self, span: SourceSpan) !void {
+        const diagnostic: Diagnostic = .{
+            .source = self.source,
+            .message = "undefined identifier.",
+            .level = .err,
+            .code = 307,
+            .range = span,
+            .emphasis = span,
+        };
+
+        try self.add(diagnostic);
+    }
+
+    pub fn errorCheckerInvalidAssignment(self: *Self, span: SourceSpan, complement: []const u8) !void {
+        var builder = std.Io.Writer.Allocating.init(self.allocator);
+        defer builder.deinit();
+        try builder.writer.print("attempt to assign a '{s}'.", .{complement});
+
+        const message = try builder.toOwnedSlice();
+        const diagnostic: Diagnostic = .{
+            .source = self.source,
+            .message = message,
+            .level = .err,
+            .code = 308,
+            .range = span,
+            .emphasis = span,
+        };
+
+        try self.add(diagnostic);
+    }
+
+    pub fn errorCheckerUnsupportedUnaryOperation(self: *Self, span: SourceSpan, operator: []const u8, operand: Type) !void {
+        var builder = std.Io.Writer.Allocating.init(self.allocator);
+        defer builder.deinit();
+        try builder.writer.print("unary operator '{s}' dont support a operand of type '{s}'.", .{ operator, try operand.toString(self.allocator) });
+
+        const message = try builder.toOwnedSlice();
+        const diagnostic: Diagnostic = .{
+            .source = self.source,
+            .message = message,
+            .level = .err,
+            .code = 309,
+            .range = span,
+            .emphasis = span,
+        };
+
+        try self.add(diagnostic);
+    }
+
+    pub fn errorCheckerUnsupportedBinaryOperation(self: *Self, span: SourceSpan, operator: []const u8, left: Type, right: Type) !void {
+        var builder = std.Io.Writer.Allocating.init(self.allocator);
+        defer builder.deinit();
+        try builder.writer.print("binary operator '{s}' dont support a left expression of type '{s}' and right expression of type '{s}'.", .{ operator, try left.toString(self.allocator), try right.toString(self.allocator) });
+
+        const message = try builder.toOwnedSlice();
+        const diagnostic: Diagnostic = .{
+            .source = self.source,
+            .message = message,
+            .level = .err,
+            .code = 310,
+            .range = span,
+            .emphasis = span,
+        };
+
+        try self.add(diagnostic);
+    }
+
+    pub fn errorCheckerNonFunctionCall(self: *Self, span: SourceSpan) !void {
+        const diagnostic: Diagnostic = .{
+            .source = self.source,
+            .message = "attempt to call a non-function identifier.",
+            .level = .err,
+            .code = 311,
+            .range = span,
+            .emphasis = span,
+        };
+
+        try self.add(diagnostic);
+    }
+
+    pub fn errorCheckerInvalidFunctionArity(self: *Self, span: SourceSpan, expected: usize, received: usize) !void {
+        var builder = std.Io.Writer.Allocating.init(self.allocator);
+        defer builder.deinit();
+        try builder.writer.print("function expects '{d}' arguments, but received '{d}' arguments.", .{ expected, received });
+
+        const message = try builder.toOwnedSlice();
+        const diagnostic: Diagnostic = .{
+            .source = self.source,
+            .message = message,
+            .level = .err,
+            .code = 312,
             .range = span,
             .emphasis = span,
         };

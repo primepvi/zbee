@@ -11,6 +11,9 @@ const Symbol = symbols_mod.Symbol;
 const Type = symbols_mod.Type;
 const TypeKind = symbols_mod.TypeKind;
 
+const diagnostics_mod = @import("internals/diagnostics.zig");
+const DiagnosticBag = diagnostics_mod.DiagnosticBag;
+
 const Flow = struct {
     can_continue: bool,
 };
@@ -18,15 +21,17 @@ const Flow = struct {
 pub const TypeChecker = struct {
     allocator: std.mem.Allocator,
     ast: *const AST,
+    bag: *DiagnosticBag,
     symbols: SymbolTable,
     expected_return_type: Type,
-    
+
     const Self = @This();
 
-    pub fn init(allocator: std.mem.Allocator, ast: *const AST) Self {
+    pub fn init(allocator: std.mem.Allocator, ast: *const AST, bag: *DiagnosticBag) Self {
         return .{
             .allocator = allocator,
             .ast = ast,
+            .bag = bag,
             .symbols = SymbolTable.init(allocator, .global, null),
             .expected_return_type = Type.invalid(),
         };
@@ -57,7 +62,7 @@ pub const TypeChecker = struct {
         const echo = stmt.echo_stmt;
         const message_type = try self.checkExpr(&echo.message);
         if (message_type.isEmpty()) {
-            // TODO: add type mismatch diagnostic.
+            try self.bag.errorCheckerInvalidVoidUsage(echo.message.getSourceSpan(), "echo message");
         }
 
         return .{
@@ -75,24 +80,29 @@ pub const TypeChecker = struct {
     fn checkVariableDeclStmt(self: *Self, stmt: *const Stmt) anyerror!Flow {
         const decl = stmt.variable_decl_stmt;
         if (self.symbols.scopeHas(decl.identifier_token.lexeme)) {
-            // TODO: add variable already declared diagnostic.
+            try self.bag.errorCheckerIdentifierAlreadyDeclared(decl.identifier_token.span, decl.identifier_token.lexeme);
+            return .{ .can_continue = true };
         }
 
         const value_type = try self.checkExpr(&decl.value);
         var variable_type = value_type;
         if (decl.type_annotation != null) {
-            const annotation_type = Type.fromAnnotation(decl.type_annotation.?);
-            if (annotation_type.isEmpty()) {
-                // TODO: add invalid variable type annotation diagnostic.
+            const annotation = decl.type_annotation.?;
+            const annotation_type = Type.fromAnnotation(annotation);
+            if (annotation_type.isEmpty() or annotation_type.isInvalid()) {
+                try self.bag.errorCheckerInvalidTypeAnnotation(annotation.span, annotation.identifier_token.span);
+                return .{ .can_continue = true };
             }
 
             if (!value_type.isAssignableTo(annotation_type)) {
-                // TODO: add type mismatch diagnostic.
+                try self.bag.errorCheckerTypeMismatch(decl.value.getSourceSpan(), annotation_type, value_type);
+                return .{ .can_continue = true };
             }
 
             variable_type = annotation_type;
-        } else if (variable_type.isEmpty()) {
-            // TODO: add invalid variable value type diagnostic.
+        } else if (variable_type.isEmpty() or variable_type.isInvalid()) {
+            try self.bag.errorCheckerInvalidVoidUsage(decl.value.getSourceSpan(), "variable value");
+            return .{ .can_continue = true };
         }
 
         const symbol: Symbol = .{
@@ -113,11 +123,13 @@ pub const TypeChecker = struct {
     fn checkFunctionDeclStmt(self: *Self, stmt: *const Stmt) anyerror!Flow {
         const decl = stmt.function_decl_stmt;
         if (self.symbols.scope != .global) {
-            // TODO: add invalid function decl diagnostic.
+            try self.bag.errorCheckerNonGlobalScopeFunctionDecl(decl.span);
+            return .{ .can_continue = true };
         }
 
         if (self.symbols.scopeHas(decl.identifier_token.lexeme)) {
-            // TODO: add function already declared diagnostic.
+            try self.bag.errorCheckerIdentifierAlreadyDeclared(decl.identifier_token.span, decl.identifier_token.lexeme);
+            return .{ .can_continue = true };
         }
 
         var param_types = try std.ArrayList(Type).initCapacity(self.allocator, decl.params.capacity);
@@ -125,7 +137,8 @@ pub const TypeChecker = struct {
         for (decl.params.items) |param| {
             const param_type = Type.fromAnnotation(param.type_annotation);
             if (param_type.isEmpty() or param_type.isInvalid()) {
-                // TODO: add invalid param type annotation diagnostic.
+                try self.bag.errorCheckerInvalidTypeAnnotation(param.type_annotation.span, param.type_annotation.identifier_token.span);
+                return .{ .can_continue = true };
             }
 
             const param_symbol: Symbol = .{
@@ -143,7 +156,8 @@ pub const TypeChecker = struct {
         const return_type = try self.allocator.create(Type);
         return_type.* = Type.fromAnnotation(decl.type_annotation);
         if (return_type.isInvalid()) {
-            // TODO: add invalid return type diagnostic.
+            try self.bag.errorCheckerInvalidTypeAnnotation(decl.type_annotation.span, decl.type_annotation.identifier_token.span);
+            return .{ .can_continue = true };
         }
 
         const symbol: Symbol = .{
@@ -166,7 +180,7 @@ pub const TypeChecker = struct {
         self.expected_return_type = prev_return_type;
 
         if (!return_type.isEmpty() and flow.can_continue) {
-            // TODO: add some control path dont return value diagnostic.
+            try self.bag.errorCheckerVoidControlPaths(decl.identifier_token.span);
         }
 
         return .{
@@ -196,7 +210,8 @@ pub const TypeChecker = struct {
         const if_stmt = stmt.if_stmt;
         const condition_type = try self.checkExpr(&if_stmt.condition);
         if (condition_type.kind != .bool_t) {
-            // TODO: add invalid if condition diagnostic.
+            try self.bag.errorCheckerTypeMismatch(if_stmt.condition.getSourceSpan(), Type.fromLexeme("bool"), condition_type);
+            return .{ .can_continue = true };
         }
 
         const consequent_flow = try self.checkStmt(if_stmt.consequent);
@@ -214,7 +229,8 @@ pub const TypeChecker = struct {
         const while_stmt = stmt.while_stmt;
         const condition_type = try self.checkExpr(&while_stmt.condition);
         if (condition_type.kind != .bool_t) {
-            // TODO: add invalid while condition diagnostic.
+            try self.bag.errorCheckerTypeMismatch(while_stmt.condition.getSourceSpan(), Type.fromLexeme("bool"), condition_type);
+            return .{ .can_continue = true };
         }
 
         const scope = SymbolTable.init(self.allocator, .block, &self.symbols);
@@ -234,7 +250,8 @@ pub const TypeChecker = struct {
 
         const condition_type = try self.checkExpr(&for_stmt.condition);
         if (condition_type.kind != .bool_t) {
-            // TODO: add invalid for condition type diagnostic.
+            try self.bag.errorCheckerTypeMismatch(for_stmt.condition.getSourceSpan(), Type.fromLexeme("bool"), condition_type);
+            return .{ .can_continue = true };
         }
 
         _ = try self.checkExpr(&for_stmt.update);
@@ -252,12 +269,14 @@ pub const TypeChecker = struct {
         }
 
         if (function_scope.scope != .function) {
-            // TODO: add invalid usage of return diagnostic.
+            try self.bag.errorCheckerInvalidReturnUsage(ret.span);
+            return .{ .can_continue = true };
         }
 
         const ret_type = if (ret.expr) |e| try self.checkExpr(&e) else Type.empty();
         if (!ret_type.isAssignableTo(self.expected_return_type)) {
-            // TODO: add invalid return type diagnostic.
+            try self.bag.errorCheckerTypeMismatch(ret.span, self.expected_return_type, ret_type);
+            return .{ .can_continue = false };
         }
 
         return .{
@@ -294,7 +313,8 @@ pub const TypeChecker = struct {
         const ident = expr.identifier_expr;
         const symbol = self.symbols.get(ident.identifier_token.lexeme);
         if (symbol == null) {
-            // TODO: add undefined identifier diagnostic.
+            try self.bag.errorCheckerUndefinedIdentifier(ident.span);
+            return Type.invalid();
         }
 
         return symbol.?.getType();
@@ -304,7 +324,7 @@ pub const TypeChecker = struct {
         const unary = expr.unary_expr;
         const operand_type = try self.checkExpr(unary.operand);
         if (!operand_type.supportsUnaryOperator(unary.operator_token.kind)) {
-            // TODO: add unsuported unary operation diagnostic.
+            try self.bag.errorCheckerUnsupportedUnaryOperation(unary.span, unary.operator_token.lexeme, operand_type);
         }
 
         return operand_type;
@@ -315,9 +335,10 @@ pub const TypeChecker = struct {
         const left_type = try self.checkExpr(binary.left);
         const right_type = try self.checkExpr(binary.right);
         if (!left_type.supportsBinaryOperator(&right_type, binary.operator_token.kind)) {
-            // TODO: add unsuported binary operation diagnostic.
+            try self.bag.errorCheckerUnsupportedBinaryOperation(binary.span, binary.operator_token.lexeme, left_type, right_type);
+            return Type.invalid();
         }
-        
+
         return switch (binary.operator_token.kind) {
             .minus_symbol, .plus_symbol, .star_symbol, .slash_symbol, .percentage_symbol => Type.fromLexeme("int"),
 
@@ -335,21 +356,24 @@ pub const TypeChecker = struct {
         const assignment = expr.assignment_expr;
         const symbol = self.symbols.get(assignment.identifier_token.lexeme);
         if (symbol == null) {
-            // TODO: add undefined identifier diagnostic.
+            try self.bag.errorCheckerUndefinedIdentifier(assignment.identifier_token.span);
+            return Type.invalid();
         }
 
         if (!symbol.?.isVariable()) {
-            // TODO: add attempt to assign a non-variable identifier.
+            try self.bag.errorCheckerInvalidAssignment(assignment.span, "non-variable identifier");
+            return Type.invalid();
         }
 
         const variable = symbol.?.variable;
         if (variable.constant) {
-            // TODO: add attempt to assign a constant variable.
+            try self.bag.errorCheckerInvalidAssignment(assignment.span, "constant variable");
+            return Type.invalid();
         }
 
         const value_type = try self.checkExpr(assignment.value);
         if (!value_type.isAssignableTo(variable.typing)) {
-            // TODO: add type mismatch diagnostic.
+            try self.bag.errorCheckerTypeMismatch(assignment.value.getSourceSpan(), variable.typing, value_type);
         }
 
         return value_type;
@@ -359,7 +383,8 @@ pub const TypeChecker = struct {
         const when = expr.when_expr;
         const condition_type = try self.checkExpr(when.condition);
         if (condition_type.kind != .bool_t) {
-            // TODO: add invalid when condition type.
+            try self.bag.errorCheckerTypeMismatch(when.condition.getSourceSpan(), Type.fromLexeme("bool"), condition_type);
+            return Type.invalid();
         }
 
         const consequent_type = try self.checkExpr(when.consequent);
@@ -385,7 +410,7 @@ pub const TypeChecker = struct {
         }
 
         if (!received.isAssignableTo(expected)) {
-            // TODO: add type mismatch diagnostic.
+            try self.bag.errorCheckerTypeMismatch(when.span, expected, received);
         }
 
         return expected;
@@ -395,28 +420,34 @@ pub const TypeChecker = struct {
         const call = expr.call_expr;
         const symbol = self.symbols.get(call.identifier_token.lexeme);
         if (symbol == null) {
-            // TODO: add attempt to call a undefined function diagnostic.
+            try self.bag.errorCheckerUndefinedIdentifier(call.span);
+            return Type.invalid();
         }
 
         if (!symbol.?.isFunction()) {
-            // TODO: add attempt to call a non-function diagnostic.
+            try self.bag.errorCheckerNonFunctionCall(call.span);
+            return Type.invalid();
         }
 
         const function = symbol.?.function;
+        const return_type = function.typing.kind.function_t.return_type;
         if (call.arguments.items.len != function.arity) {
-            // TODO: add invalid number of arguments diagnostic.
+            try self.bag.errorCheckerInvalidFunctionArity(call.span, function.arity, call.arguments.items.len);
+            return return_type.*;
         }
 
         const param_types = function.typing.kind.function_t.param_types;
+        
         for (0..param_types.items.len) |i| {
             const param_type = param_types.items[i];
-            const argument_type = try self.checkExpr(&call.arguments.items[i]);
+            const argument_expr = call.arguments.items[i];
+            const argument_type = try self.checkExpr(&argument_expr);
             if (!argument_type.isAssignableTo(param_type)) {
-                // TODO: add type mismatch diagnostic.
+                try self.bag.errorCheckerTypeMismatch(argument_expr.getSourceSpan(), param_type, argument_type);
+                return return_type.*;
             }
         }
 
-        const return_type = function.typing.kind.function_t.return_type;
         return return_type.*;
     }
 };
