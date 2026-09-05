@@ -70,22 +70,26 @@ pub const Type = struct {
         };
     }
 
-    pub fn isEmpty(self: *Self) bool {
-        return switch (self.*) {
+    pub fn isEmpty(self: *const Self) bool {
+        return switch (self.kind) {
             .void_t => true,
             else => false,
         };
     }
 
-    pub fn isInvalid(self: *Self) bool {
-        return switch (self.*) {
+    pub fn isInvalid(self: *const Self) bool {
+        return switch (self.kind) {
             .invalid_t => true,
             else => false,
         };
     }
 
-    pub fn isAssignableTo(self: *Self, expected: Self) bool {
-        const is_equal = std.mem.eql(TypeKind, self.kind, expected.kind);
+    pub fn isEqualTo(self: *const Self, other: Self) bool {
+        return std.mem.eql(u8, @tagName(self.kind), @tagName(other.kind));
+    }
+
+    pub fn isAssignableTo(self: *const Self, expected: Self) bool {
+        const is_equal = std.mem.eql(u8, @tagName(self.kind), @tagName(expected.kind));
         if (expected.nullable and (is_equal or self.kind == .null_t)) {
             return true;
         } else {
@@ -96,7 +100,7 @@ pub const Type = struct {
     pub fn supportsUnaryOperator(self: *const Self, operator: TokenKind) bool {
         return switch (operator) {
             .minus_symbol, .plus_symbol => self.kind == .int_t,
-            .not_symbol => self.kind == .bool_t,
+            .not_keyword => self.kind == .bool_t,
             else => false,
         };
     }
@@ -105,9 +109,8 @@ pub const Type = struct {
         return switch (operator) {
             .minus_symbol, .plus_symbol, .star_symbol, .slash_symbol, .percentage_symbol, .lt_symbol, .gt_symbol, .lte_symbol, .gte_symbol => self.kind == .int_t and other.kind == .int_t,
 
-            .eqeq_symbol, .neq_symbol => !(self.isEmpty() or self.isInvalid()) and !(other.isEmpty() or other.isInvalid())
-                .and_keyword,
-            .or_keyword => self.kind == .bool_t and other.kind == .bool_t,
+            .eqeq_symbol, .neq_symbol => !(self.isEmpty() or self.isInvalid()) and !(other.isEmpty() or other.isInvalid()),
+            .and_keyword, .or_keyword => self.kind == .bool_t and other.kind == .bool_t,
             else => false,
         };
     }
@@ -137,7 +140,6 @@ pub const Symbol = union(SymbolKind) {
         return switch (self.*) {
             .variable => |v| v.name,
             .function => |f| f.name,
-            else => unreachable,
         };
     }
 
@@ -145,7 +147,6 @@ pub const Symbol = union(SymbolKind) {
         return switch (self.*) {
             .variable => |v| v.typing,
             .function => |f| f.typing,
-            else => unreachable,
         };
     }
 
@@ -173,12 +174,16 @@ pub const SymbolTable = struct {
 
     const Self = @This();
 
-    pub fn init(scope: ScopeKind, parent: ?*SymbolTable) Self {
+    pub fn init(allocator: std.mem.Allocator, scope: ScopeKind, parent: ?*SymbolTable) Self {
         return .{
             .scope = scope,
-            .env = .empty,
+            .env = .init(allocator),
             .parent = parent,
         };
+    }
+
+    pub fn deinit(self: *Self) void {
+        self.env.deinit();
     }
 
     pub fn scopeHas(self: *const Self, name: []const u8) bool {

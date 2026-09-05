@@ -1,6 +1,7 @@
 const std = @import("std");
 const Lexer = @import("Lexer.zig").Lexer;
 const Parser = @import("Parser.zig").Parser;
+const TypeChecker = @import("TypeChecker.zig").TypeChecker;
 const Token = @import("internals/Token.zig").Token;
 const Source = @import("internals/Source.zig").Source;
 const DiagnosticBag = @import("internals/diagnostics.zig").DiagnosticBag;
@@ -40,4 +41,7 @@ pub fn main(init: std.process.Init) !void {
     for (ast.stmts.items) |stmt| {
         std.debug.print("{}\n", .{stmt});
     }
+
+    var checker = TypeChecker.init(arena.allocator(), &ast);
+    try checker.check();
 }

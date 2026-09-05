@@ -20,26 +20,26 @@ pub const TypeChecker = struct {
     ast: *const AST,
     symbols: SymbolTable,
     expected_return_type: Type,
-
+    
     const Self = @This();
 
     pub fn init(allocator: std.mem.Allocator, ast: *const AST) Self {
         return .{
             .allocator = allocator,
             .ast = ast,
-            .symbols = SymbolTable.init(.global),
+            .symbols = SymbolTable.init(allocator, .global, null),
             .expected_return_type = Type.invalid(),
         };
     }
 
     pub fn check(self: *Self) !void {
         for (self.ast.stmts.items) |stmt| {
-            try self.checkStmt(stmt);
+            _ = try self.checkStmt(&stmt);
         }
     }
 
     fn checkStmt(self: *Self, stmt: *const Stmt) anyerror!Flow {
-        switch (stmt.*) {
+        return switch (stmt.*) {
             .echo_stmt => try self.checkEchoStmt(stmt),
             .expr_stmt => try self.checkExprStmt(stmt),
             .variable_decl_stmt => try self.checkVariableDeclStmt(stmt),
@@ -50,12 +50,12 @@ pub const TypeChecker = struct {
             .for_stmt => try self.checkForStmt(stmt),
             .return_stmt => try self.checkReturnStmt(stmt),
             else => unreachable,
-        }
+        };
     }
 
     fn checkEchoStmt(self: *Self, stmt: *const Stmt) anyerror!Flow {
         const echo = stmt.echo_stmt;
-        const message_type = try self.checkExpr(echo.message);
+        const message_type = try self.checkExpr(&echo.message);
         if (message_type.isEmpty()) {
             // TODO: add type mismatch diagnostic.
         }
@@ -66,7 +66,7 @@ pub const TypeChecker = struct {
     }
 
     fn checkExprStmt(self: *Self, stmt: *const Stmt) anyerror!Flow {
-        _ = try self.checkExpr(stmt.expr_stmt.expr);
+        _ = try self.checkExpr(&stmt.expr_stmt.expr);
         return .{
             .can_continue = true,
         };
@@ -78,10 +78,10 @@ pub const TypeChecker = struct {
             // TODO: add variable already declared diagnostic.
         }
 
-        const value_type = try self.checkExpr(decl.value);
+        const value_type = try self.checkExpr(&decl.value);
         var variable_type = value_type;
         if (decl.type_annotation != null) {
-            const annotation_type = Type.fromAnnotation(decl.type_annotation);
+            const annotation_type = Type.fromAnnotation(decl.type_annotation.?);
             if (annotation_type.isEmpty()) {
                 // TODO: add invalid variable type annotation diagnostic.
             }
@@ -121,10 +121,10 @@ pub const TypeChecker = struct {
         }
 
         var param_types = try std.ArrayList(Type).initCapacity(self.allocator, decl.params.capacity);
-        var scope = SymbolTable.init(.function, self.symbols);
+        var scope = SymbolTable.init(self.allocator, .function, &self.symbols);
         for (decl.params.items) |param| {
             const param_type = Type.fromAnnotation(param.type_annotation);
-            if (param_type.isEmpty() || param_type.isInvalid()) {
+            if (param_type.isEmpty() or param_type.isInvalid()) {
                 // TODO: add invalid param type annotation diagnostic.
             }
 
@@ -137,10 +137,10 @@ pub const TypeChecker = struct {
             };
 
             param_types.appendAssumeCapacity(param_type);
-            scope.put(param_symbol);
+            try scope.put(param_symbol);
         }
 
-        const return_type = self.allocator.create(Type);
+        const return_type = try self.allocator.create(Type);
         return_type.* = Type.fromAnnotation(decl.type_annotation);
         if (return_type.isInvalid()) {
             // TODO: add invalid return type diagnostic.
@@ -154,15 +154,15 @@ pub const TypeChecker = struct {
             },
         };
 
-        self.symbols.put(symbol);
-        scope.put(symbol);
+        try self.symbols.put(symbol);
+        try scope.put(symbol);
 
         const prev_return_type = self.expected_return_type;
         self.expected_return_type = return_type.*;
-        self.symbols = &scope;
+        self.symbols = scope;
 
         const flow = try self.checkStmt(decl.body);
-        self.symbols = scope.parent.?;
+        self.symbols = scope.parent.?.*;
         self.expected_return_type = prev_return_type;
 
         if (!return_type.isEmpty() and flow.can_continue) {
@@ -176,25 +176,25 @@ pub const TypeChecker = struct {
 
     fn checkBlockStmt(self: *Self, stmt: *const Stmt) anyerror!Flow {
         const block = stmt.block_stmt;
-        var scope = SymbolTable.init(.block, self.symbols);
-        self.symbols = &scope;
+        const scope = SymbolTable.init(self.allocator, .block, &self.symbols);
+        self.symbols = scope;
 
         var flow: Flow = .{ .can_continue = true };
         for (block.items.items) |s| {
             if (!flow.can_continue)
                 break;
 
-            flow = try self.checkStmt(s);
+            flow = try self.checkStmt(&s);
         }
 
-        self.symbols = scope.parent.?;
+        self.symbols = scope.parent.?.*;
 
         return flow;
     }
 
     fn checkIfStmt(self: *Self, stmt: *const Stmt) anyerror!Flow {
         const if_stmt = stmt.if_stmt;
-        const condition_type = try self.checkExpr(if_stmt.condition);
+        const condition_type = try self.checkExpr(&if_stmt.condition);
         if (condition_type.kind != .bool_t) {
             // TODO: add invalid if condition diagnostic.
         }
@@ -212,35 +212,35 @@ pub const TypeChecker = struct {
 
     fn checkWhileStmt(self: *Self, stmt: *const Stmt) anyerror!Flow {
         const while_stmt = stmt.while_stmt;
-        const condition_type = try self.checkExpr(while_stmt.condition);
+        const condition_type = try self.checkExpr(&while_stmt.condition);
         if (condition_type.kind != .bool_t) {
             // TODO: add invalid while condition diagnostic.
         }
 
-        const scope = SymbolTable.init(.block, self.symbols);
-        self.symbols = &scope;
+        const scope = SymbolTable.init(self.allocator, .block, &self.symbols);
+        self.symbols = scope;
 
         const flow = try self.checkStmt(while_stmt.body);
-        self.symbols = scope.parent.?;
+        self.symbols = scope.parent.?.*;
 
         return flow;
     }
 
     fn checkForStmt(self: *Self, stmt: *const Stmt) anyerror!Flow {
         const for_stmt = stmt.for_stmt;
-        const scope = SymbolTable.init(.block, self.symbols);
-        self.symbols = &scope;
+        const scope = SymbolTable.init(self.allocator, .block, &self.symbols);
+        self.symbols = scope;
         _ = try self.checkStmt(for_stmt.init);
 
-        const condition_type = try self.checkExpr(for_stmt.condition);
+        const condition_type = try self.checkExpr(&for_stmt.condition);
         if (condition_type.kind != .bool_t) {
             // TODO: add invalid for condition type diagnostic.
         }
 
-        _ = try self.checkExpr(for_stmt.update);
+        _ = try self.checkExpr(&for_stmt.update);
 
         const flow = try self.checkStmt(for_stmt.body);
-        self.symbols = scope.parent.?;
+        self.symbols = scope.parent.?.*;
         return flow;
     }
 
@@ -248,14 +248,14 @@ pub const TypeChecker = struct {
         const ret = stmt.return_stmt;
         var function_scope = self.symbols;
         while (function_scope.parent != null and function_scope.scope != .function) {
-            function_scope = function_scope.parent.?;
+            function_scope = function_scope.parent.?.*;
         }
 
         if (function_scope.scope != .function) {
             // TODO: add invalid usage of return diagnostic.
         }
 
-        const ret_type = if (ret.expr) |e| try self.checkExpr(e) else Type.empty();
+        const ret_type = if (ret.expr) |e| try self.checkExpr(&e) else Type.empty();
         if (!ret_type.isAssignableTo(self.expected_return_type)) {
             // TODO: add invalid return type diagnostic.
         }
@@ -314,16 +314,21 @@ pub const TypeChecker = struct {
         const binary = expr.binary_expr;
         const left_type = try self.checkExpr(binary.left);
         const right_type = try self.checkExpr(binary.right);
-        if (!left_type.supportsBinaryOperator(right_type, binary.operator_token.kind)) {
+        if (!left_type.supportsBinaryOperator(&right_type, binary.operator_token.kind)) {
             // TODO: add unsuported binary operation diagnostic.
         }
         
         return switch (binary.operator_token.kind) {
             .minus_symbol, .plus_symbol, .star_symbol, .slash_symbol, .percentage_symbol => Type.fromLexeme("int"),
 
-            .lt_symbol, .lte_symbol, .gt_symbol, .gte_symbol, .eqeq_symbol, .neq_symbol, .and_symbol, .or_symbol => Type.fromLexeme("bool"),
+            .lt_symbol, .lte_symbol, .gt_symbol, .gte_symbol, .eqeq_symbol, .neq_symbol, .and_keyword, .or_keyword => Type.fromLexeme("bool"),
             else => unreachable,
         };
+    }
+
+    fn checkParenthesizedExpr(self: *Self, expr: *const Expr) anyerror!Type {
+        const parenthesized = expr.parenthesized_expr;
+        return try self.checkExpr(parenthesized.expr);
     }
 
     fn checkAssignmentExpr(self: *Self, expr: *const Expr) anyerror!Type {
@@ -375,7 +380,7 @@ pub const TypeChecker = struct {
             received = alternate_type;
         }
 
-        if (std.mem.eql(TypeKind, expected.kind, received.kind) and alternate_type.nullable) {
+        if (received.isEqualTo(expected) and alternate_type.nullable) {
             expected.nullable = true;
         }
 
@@ -405,13 +410,13 @@ pub const TypeChecker = struct {
         const param_types = function.typing.kind.function_t.param_types;
         for (0..param_types.items.len) |i| {
             const param_type = param_types.items[i];
-            const argument_type = try self.checkExpr(call.arguments.items[i]);
+            const argument_type = try self.checkExpr(&call.arguments.items[i]);
             if (!argument_type.isAssignableTo(param_type)) {
                 // TODO: add type mismatch diagnostic.
             }
         }
 
         const return_type = function.typing.kind.function_t.return_type;
-        return return_type;
+        return return_type.*;
     }
 };

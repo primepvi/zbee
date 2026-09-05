@@ -284,7 +284,8 @@ pub const Parser = struct {
                 .end = right.getSourceSpan().end,
             };
 
-            left.* = .{
+            const binary = try self.allocator.create(Expr);
+            binary.* = .{
                 .binary_expr = .{
                     .left = left,
                     .right = right,
@@ -292,6 +293,8 @@ pub const Parser = struct {
                     .span = span,
                 },
             };
+
+            left = binary;
         }
 
         return left.*;
