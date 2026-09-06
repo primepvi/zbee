@@ -86,6 +86,51 @@ pub const Expr = union(ExprKind) {
 
     const Self = @This();
 
+    pub fn deinit(self: *Self, allocator: std.mem.Allocator) void {
+        switch (self.*) {
+            .assignment_expr => {
+                var e = self.assignment_expr;
+                e.value.deinit(allocator);
+                allocator.destroy(e.value);
+            },
+            .binary_expr => {
+                var e = self.binary_expr;
+                e.left.deinit(allocator);
+                e.right.deinit(allocator);
+                allocator.destroy(e.left);
+                allocator.destroy(e.right);
+            },
+            .unary_expr => {
+                var e = self.unary_expr;
+                e.operand.deinit(allocator);
+                allocator.destroy(e.operand);
+            },
+            .parenthesized_expr => {
+                var e = self.parenthesized_expr;
+                e.expr.deinit(allocator);
+                allocator.destroy(e.expr);
+            },
+            .when_expr => {
+                var e = self.when_expr;
+                e.condition.deinit(allocator);
+                e.consequent.deinit(allocator);
+                e.alternate.deinit(allocator);
+                allocator.destroy(e.condition);
+                allocator.destroy(e.consequent);
+                allocator.destroy(e.alternate);
+            },
+            .call_expr => {
+                var e = self.call_expr;
+                for (0..e.arguments.items.len) |i| {
+                    var arg = e.arguments.items[i];
+                    arg.deinit(allocator);
+                }
+                e.arguments.deinit(allocator);
+            },
+            else => {},
+        }
+    }
+
     pub fn getSourceSpan(self: *const Self) SourceSpan {
         return switch (self.*) {
             .literal_expr => |e| {
@@ -223,6 +268,70 @@ pub const Stmt = union(StmtKind) {
 
     const Self = @This();
 
+    pub fn deinit(self: *Self, allocator: std.mem.Allocator) void {
+        switch (self.*) {
+            .variable_decl_stmt => {
+                var s = self.variable_decl_stmt;
+                s.value.deinit(allocator);
+            },
+            .function_decl_stmt => {
+                var s = self.function_decl_stmt;
+                s.body.deinit(allocator);
+                allocator.destroy(s.body);
+                s.params.deinit(allocator);
+            },
+            .return_stmt => {
+                var s = self.return_stmt;
+                if (s.expr != null) s.expr.?.deinit(allocator);
+            },
+            .expr_stmt => {
+                var s = self.expr_stmt;
+                s.expr.deinit(allocator);
+            },
+            .echo_stmt => {
+                var s = self.echo_stmt;
+                s.message.deinit(allocator);
+            },
+            .if_stmt => {
+                var s = self.if_stmt;
+                s.condition.deinit(allocator);
+                s.consequent.deinit(allocator);
+                allocator.destroy(s.consequent);
+                
+                if (s.alternate != null) {
+                    s.alternate.?.deinit(allocator);
+                    allocator.destroy(s.alternate.?);
+                }                
+            },
+            .block_stmt => {                
+                var s = self.block_stmt;
+                for (0..s.items.items.len) |i| {
+                    var inner = s.items.items[i];
+                    inner.deinit(allocator);
+                }
+                s.items.deinit(allocator);
+            },
+            .for_stmt => {
+                var s = self.for_stmt;
+                s.update.deinit(allocator);
+                s.condition.deinit(allocator);
+                
+                s.body.deinit(allocator);
+                allocator.destroy(s.body);
+                
+                s.init.deinit(allocator);
+                allocator.destroy(s.init);
+            },
+            .while_stmt => {
+                var s = self.while_stmt;
+                s.condition.deinit(allocator);
+                s.body.deinit(allocator);
+                allocator.destroy(s.body);
+            },
+            else => {}
+        }
+    }
+
     pub fn getSourceSpan(self: *const Self) SourceSpan {
         return switch (self.*) {
             .variable_decl_stmt => |s| {
@@ -270,7 +379,12 @@ pub const AST = struct {
         return .{ .allocator = allocator, .source = source, .stmts = .empty };
     }
 
-    pub fn deinit(self: *Self) !void {
-        try self.stmts.deinit(self.allocator);
+    pub fn deinit(self: *Self) void {
+        for (0..self.stmts.items.len) |i| {
+            var stmt = self.stmts.items[i];
+            stmt.deinit(self.allocator);
+        }
+        
+        self.stmts.deinit(self.allocator);
     }
 };

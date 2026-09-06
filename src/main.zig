@@ -10,17 +10,20 @@ pub fn main(init: std.process.Init) !void {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
 
-    const source = try Source.initFromFile(arena.allocator(), init.io, "examples/all.bee");
+    var source = try Source.initFromFile(arena.allocator(), init.io, "examples/all.bee");
+    defer source.deinit(arena.allocator());
+    
     var tokens = std.ArrayList(Token).empty;
+    defer tokens.deinit(arena.allocator());
     
     var lexer_bag = DiagnosticBag.init(arena.allocator(), &source);
     defer lexer_bag.deinit();
     
     var lexer = Lexer.init(&source, &lexer_bag);
-    while (true) {
-        const current = try lexer.nextToken();
-        try tokens.append(arena.allocator(), current);
-        if (current.kind == .eof) break;
+    var current: Token = undefined;
+    while (current.kind != .eof) {
+        current = try lexer.nextToken();
+        try tokens.append(arena.allocator(), current);        
     }
 
     if (lexer_bag.hasErrors()) {
@@ -32,11 +35,13 @@ pub fn main(init: std.process.Init) !void {
     defer parser_bag.deinit();
     
     var parser = Parser.init(arena.allocator(), &source, tokens, &parser_bag);
-    const ast = try parser.parse();
+    var ast = try parser.parse();
+    defer ast.deinit();
+    
     if (parser_bag.hasErrors()) {
         try parser_bag.debug();
         std.process.exit(1);
-    }           
+    }      
 
     for (ast.stmts.items) |stmt| {
         std.debug.print("{}\n", .{stmt});

@@ -24,21 +24,24 @@ pub fn build(b: *std.Build) void {
 
     b.installArtifact(exe);
 
-    const run = b.step("run", "Run zbee");
+    const run_step = b.step("run", "Run zbee");
     const run_cmd = b.addRunArtifact(exe);
-    run.dependOn(&run_cmd.step);
+    run_step.dependOn(&run_cmd.step);
 
-    const tests = b.addTest(.{
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("tests/tests.zig"),
-            .target = target,
-            .optimize = optimize,
-            .imports = &.{
-                .{ .name = "zbee", .module = zbee },
-            },
-        }),
+    const test_module = b.createModule(.{
+        .root_source_file = b.path("tests/tests.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = &.{
+            .{ .name = "zbee", .module = zbee },
+        },
     });
 
+    const test_exe = b.addTest(.{
+        .root_module = test_module,
+    });
+
+    const run_tests = b.addRunArtifact(test_exe);
     const test_step = b.step("test", "Run tests");
-    test_step.dependOn(&b.addRunArtifact(tests).step);
+    test_step.dependOn(&run_tests.step);
 }

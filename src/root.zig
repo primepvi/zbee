@@ -5,3 +5,4 @@ pub const source = @import("internals/Source.zig");
 pub const token = @import("internals/Token.zig");
 pub const symbols = @import("internals/symbols.zig");
 pub const diagnostics = @import("internals/diagnostics.zig");
+pub const ast = @import("internals/ast.zig");

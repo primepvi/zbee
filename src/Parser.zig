@@ -1,5 +1,7 @@
 const std = @import("std");
 
+const Lexer = @import("Lexer.zig").Lexer;
+
 const source_mod = @import("internals/Source.zig");
 const Source = source_mod.Source;
 const SourceSpan = source_mod.SourceSpan;
@@ -244,7 +246,7 @@ pub const Parser = struct {
     fn parseBinaryExpr(self: *Self, priority: usize) anyerror!Expr {
         const unary_op_priority = TokenKind.getUnaryOperatorPriority(self.peek().kind);
 
-        var left = try self.allocator.create(Expr);
+        var expr: Expr = undefined;
         if (unary_op_priority != 0 and unary_op_priority >= priority) {
             const operator_token = self.eat();
             const operand = try self.allocator.create(Expr);
@@ -257,7 +259,7 @@ pub const Parser = struct {
                 .end = operand.getSourceSpan().end,
             };
 
-            left.* = .{
+            expr = .{
                 .unary_expr = .{
                     .operator_token = operator_token,
                     .operand = operand,
@@ -265,7 +267,7 @@ pub const Parser = struct {
                 },
             };
         } else {
-            left.* = try self.parsePrimaryExpr();
+            expr = try self.parsePrimaryExpr();
         }
 
         while (true) {
@@ -277,6 +279,9 @@ pub const Parser = struct {
             const right = try self.allocator.create(Expr);
             right.* = try self.parseBinaryExpr(op_priority);
 
+            const left = try self.allocator.create(Expr);
+            left.* = expr;
+
             const span: SourceSpan = .{
                 .line = left.getSourceSpan().line,
                 .col = left.getSourceSpan().col,
@@ -284,8 +289,7 @@ pub const Parser = struct {
                 .end = right.getSourceSpan().end,
             };
 
-            const binary = try self.allocator.create(Expr);
-            binary.* = .{
+            const binary: Expr = .{
                 .binary_expr = .{
                     .left = left,
                     .right = right,
@@ -294,10 +298,10 @@ pub const Parser = struct {
                 },
             };
 
-            left = binary;
+            expr = binary;
         }
 
-        return left.*;
+        return expr;
     }
 
     fn parseExpr(self: *Self) anyerror!Expr {
@@ -730,7 +734,8 @@ pub const Parser = struct {
     fn lookahead(self: *const Self) Token {
         return if (self.peek().kind != .eof)
             self.tokens.items[self.cursor + 1]
-        else self.peek();
+        else
+            self.peek();
     }
 
     fn eat(self: *Self) Token {
