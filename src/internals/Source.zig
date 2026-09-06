@@ -18,6 +18,8 @@ pub const Source = struct {
     code: []const u8,
     lines_span: std.ArrayList(SourceLineSpan),
 
+    const Self = @This();
+
     pub fn init(allocator: std.mem.Allocator, name: []const u8, code: []const u8) !Source {
         var lines_span = std.ArrayList(SourceLineSpan).empty;
         var start: usize = 0;
@@ -45,5 +47,9 @@ pub const Source = struct {
         const dir: std.Io.Dir = .cwd();
         const buffer = try dir.readFileAlloc(io, path, allocator, .unlimited);
         return Source.init(allocator, path, buffer);
+    }
+
+    pub fn deinit(self: *Self, allocator: std.mem.Allocator) void {
+        self.lines_span.deinit(allocator);
     }
 };

@@ -37,7 +37,7 @@ pub const Lexer = struct {
     }
 
     fn peek(self: Self) u8 {
-        return self.source.code[self.cursor];
+        return if (self.hasMoreTokens()) self.source.code[self.cursor] else self.source.code[self.source.code.len-1];
     }
 
     fn lookahead(self: Self) u8 {
