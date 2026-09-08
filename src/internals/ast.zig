@@ -423,7 +423,7 @@ const AstDebugWriter = struct {
                 try self.value("\"{s}\"\n", .{i.identifier_token.lexeme});
             },
             .binary_expr => |b| {
-                try self.statement(prefix, last, "Binary Expression");
+                try self.expression(prefix, last, "Binary Expression");
                 const child_prefix = try self.childPrefix(prefix, is_last);
                 defer self.allocator.free(child_prefix);
 
