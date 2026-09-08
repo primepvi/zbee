@@ -159,7 +159,7 @@ pub const Expr = union(ExprKind) {
             },
             .invalid_expr => |e| {
                 return e.span;
-            }
+            },
         };
     }
 };
@@ -297,13 +297,13 @@ pub const Stmt = union(StmtKind) {
                 s.condition.deinit(allocator);
                 s.consequent.deinit(allocator);
                 allocator.destroy(s.consequent);
-                
+
                 if (s.alternate != null) {
                     s.alternate.?.deinit(allocator);
                     allocator.destroy(s.alternate.?);
-                }                
+                }
             },
-            .block_stmt => {                
+            .block_stmt => {
                 var s = self.block_stmt;
                 for (0..s.items.items.len) |i| {
                     var inner = s.items.items[i];
@@ -315,10 +315,10 @@ pub const Stmt = union(StmtKind) {
                 var s = self.for_stmt;
                 s.update.deinit(allocator);
                 s.condition.deinit(allocator);
-                
+
                 s.body.deinit(allocator);
                 allocator.destroy(s.body);
-                
+
                 s.init.deinit(allocator);
                 allocator.destroy(s.init);
             },
@@ -328,7 +328,7 @@ pub const Stmt = union(StmtKind) {
                 s.body.deinit(allocator);
                 allocator.destroy(s.body);
             },
-            else => {}
+            else => {},
         }
     }
 
@@ -363,8 +363,260 @@ pub const Stmt = union(StmtKind) {
             },
             .invalid_stmt => |s| {
                 return s.span;
-            }
+            },
         };
+    }
+};
+
+const AstDebugWriter = struct {
+    writer: *std.Io.Writer,
+    allocator: std.mem.Allocator,
+
+    const Self = @This();
+
+    const Color = struct {
+        const reset = "\x1b[0m";
+
+        const branch = "\x1b[38;5;243m";
+        const statement = "\x1b[38;5;109m";
+        const expression = "\x1b[38;5;139m";
+        const property = "\x1b[38;5;179m";
+        const value = "\x1b[38;5;108m";
+    };
+
+    pub fn init(allocator: std.mem.Allocator, writer: *std.Io.Writer) Self {
+        return Self{
+            .writer = writer,
+            .allocator = allocator,
+        };
+    }
+
+    pub fn debug(self: *Self, program: *const std.ArrayList(Stmt)) !void {
+        try self.statement("", "", "Program");
+        for (0..program.items.len) |i| {
+            const is_last = i == program.items.len - 1;
+            const stmt = program.items[i];
+            try self.debugStmt(&stmt, " ", is_last);
+        }
+    }
+
+    fn debugExpr(self: *Self, expr: *const Expr, prefix: []const u8, is_last: bool) !void {
+        const common = Color.branch ++ "├──" ++ Color.reset;
+        const last = Color.branch ++ "└──" ++ Color.reset;
+        const symbol = if (is_last) last else common;
+
+        switch (expr.*) {
+            .literal_expr => |l| {
+                try self.expression(prefix, symbol, "Literal Expression");
+                const child_prefix = try self.childPrefix(prefix, is_last);
+                defer self.allocator.free(child_prefix);
+
+                try self.property(child_prefix, last, "Value:");
+                try self.value("\"{s}\"\n", .{l.value_token.lexeme});
+            },
+            .identifier_expr => |i| {
+                try self.expression(prefix, symbol, "Identifier Expression");
+                const child_prefix = try self.childPrefix(prefix, is_last);
+                defer self.allocator.free(child_prefix);
+
+                try self.property(child_prefix, last, "Identifier:");
+                try self.value("\"{s}\"\n", .{i.identifier_token.lexeme});
+            },
+            .binary_expr => |b| {
+                try self.statement(prefix, last, "Binary Expression");
+                const child_prefix = try self.childPrefix(prefix, is_last);
+                defer self.allocator.free(child_prefix);
+
+                const expr_prefix = try self.childPrefix(child_prefix, false);
+                defer self.allocator.free(expr_prefix);
+
+                try self.property(child_prefix, common, "Left:\n");
+                try self.debugExpr(b.left, expr_prefix, true);
+                try self.property(child_prefix, common, "Right:\n");
+                try self.debugExpr(b.right, expr_prefix, true);
+
+                try self.property(child_prefix, last, "Operator:");
+                try self.value("\"{s}\"\n", .{b.operator_token.lexeme});
+            },
+            else => {},
+        }
+    }
+
+    fn debugStmt(self: *Self, stmt: *const Stmt, prefix: []const u8, is_last: bool) !void {
+        const common = Color.branch ++ "├──" ++ Color.reset;
+        const last = Color.branch ++ "└──" ++ Color.reset;
+        const symbol = if (is_last) last else common;
+
+        switch (stmt.*) {
+            .variable_decl_stmt => |v| {
+                try self.statement(prefix, symbol, "Variable Declaration Statement");
+                const child_prefix = try self.childPrefix(prefix, is_last);
+                defer self.allocator.free(child_prefix);
+
+                try self.property(child_prefix, common, "Constant:");
+                try self.value("{}\n", .{std.mem.eql(u8, v.keyword_token.lexeme, "const")});
+
+                try self.property(child_prefix, common, "Identifier:");
+                try self.value("\"{s}\"\n", .{v.identifier_token.lexeme});
+
+                if (v.type_annotation) |annotation| {
+                    try self.property(child_prefix, common, "TypeAnnotation:");
+                    try self.writer.print(" (Nullable:", .{});
+                    try self.value("{}", .{annotation.nullable});
+                    try self.writer.print(", Lexeme:", .{});
+                    try self.value("\"{s}\"", .{annotation.identifier_token.lexeme});
+                    try self.writer.print(")\n", .{});
+                }
+
+                try self.property(child_prefix, last, "Value:\n");
+                const expr_prefix = try self.childPrefix(child_prefix, true);
+                defer self.allocator.free(expr_prefix);
+                try self.debugExpr(&v.value, expr_prefix, true);
+            },
+            .function_decl_stmt => |f| {
+                try self.statement(prefix, symbol, "Function Declaration Statement");
+                const child_prefix = try self.childPrefix(prefix, is_last);
+                defer self.allocator.free(child_prefix);
+
+                try self.property(child_prefix, common, "Identifier:");
+                try self.value("\"{s}\"\n", .{f.identifier_token.lexeme});
+
+                try self.property(child_prefix, common, "TypeAnnotation:");
+                try self.writer.print(" (Nullable:", .{});
+                try self.value("{}", .{f.type_annotation.nullable});
+                try self.writer.print(", Lexeme:", .{});
+                try self.value("\"{s}\"", .{f.type_annotation.identifier_token.lexeme});
+                try self.writer.print(")\n", .{});
+
+                try self.property(child_prefix, common, "Body:\n");
+                const body_prefix = try self.childPrefix(child_prefix, false);
+                defer self.allocator.free(body_prefix);
+                try self.debugStmt(f.body, body_prefix, true);
+
+                try self.property(child_prefix, last, "Params:\n");
+                const param_title_prefix = try self.childPrefix(child_prefix, true);
+                defer self.allocator.free(param_title_prefix);
+
+                for (0..f.params.items.len) |i| {
+                    const param_title = try std.fmt.allocPrint(self.allocator, "{d}:\n", .{i});
+                    defer self.allocator.free(param_title);
+
+                    const inner_is_last = i == f.params.items.len - 1;
+                    const inner_symbol = if (inner_is_last) last else common;
+                    try self.property(param_title_prefix, inner_symbol, param_title);
+
+                    const param_prefix = try self.childPrefix(param_title_prefix, inner_is_last);
+                    defer self.allocator.free(param_prefix);
+                    const param = f.params.items[i];
+
+                    try self.property(param_prefix, common, "Identifier:");
+                    try self.value("\"{s}\"\n", .{param.identifier_token.lexeme});
+
+                    try self.property(param_prefix, last, "TypeAnnotation:");
+                    try self.writer.print(" (Nullable:", .{});
+                    try self.value("{}", .{param.type_annotation.nullable});
+                    try self.writer.print(", Lexeme:", .{});
+                    try self.value("\"{s}\"", .{param.type_annotation.identifier_token.lexeme});
+                    try self.writer.print(")\n", .{});
+                }
+            },
+            .return_stmt => |r| {
+                try self.statement(prefix, last, "Return Statement");
+                const child_prefix = try self.childPrefix(prefix, is_last);
+                defer self.allocator.free(child_prefix);
+
+                if (r.expr) |expr| {
+                    try self.property(child_prefix, last, "Expression:\n");
+                    const expr_prefix = try self.childPrefix(child_prefix, true);
+                    defer self.allocator.free(expr_prefix);
+                    try self.debugExpr(&expr, expr_prefix, false);
+                }
+            },
+            .expr_stmt => |e| {
+                try self.statement(prefix, last, "Expression Statement");
+                const child_prefix = try self.childPrefix(prefix, is_last);
+                defer self.allocator.free(child_prefix);
+
+                try self.property(child_prefix, last, "Expression:\n");
+                const expr_prefix = try self.childPrefix(child_prefix, true);
+                defer self.allocator.free(expr_prefix);
+                try self.debugExpr(&e.expr, expr_prefix, true);
+            },
+            .echo_stmt => |e| {
+                try self.statement(prefix, last, "Echo Statement");
+                const child_prefix = try self.childPrefix(prefix, is_last);
+                defer self.allocator.free(child_prefix);
+
+                try self.property(child_prefix, last, "Message:\n");
+                const expr_prefix = try self.childPrefix(child_prefix, true);
+                defer self.allocator.free(expr_prefix);
+                try self.debugExpr(&e.message, expr_prefix, true);
+            },
+            else => {},
+        }
+    }
+
+    fn childPrefix(
+        self: *Self,
+        prefix: []const u8,
+        is_last: bool,
+    ) ![]const u8 {
+        const whitespace = if (is_last)
+            "    "
+        else
+            Color.branch ++ "│   " ++ Color.reset;
+
+        return try std.fmt.allocPrint(
+            self.allocator,
+            "{s}{s}",
+            .{ prefix, whitespace },
+        );
+    }
+
+    fn statement(
+        self: *Self,
+        prefix: []const u8,
+        symbol: []const u8,
+        comptime name: []const u8,
+    ) !void {
+        try self.writer.print(
+            "{s}" ++ Color.branch ++ "{s}" ++ Color.statement ++
+                " " ++ name ++ Color.reset ++ "\n",
+            .{ prefix, symbol },
+        );
+    }
+
+    fn expression(
+        self: *Self,
+        prefix: []const u8,
+        symbol: []const u8,
+        comptime name: []const u8,
+    ) !void {
+        try self.writer.print(
+            "{s}" ++ Color.branch ++ "{s}" ++ Color.expression ++
+                " " ++ name ++ Color.reset ++ "\n",
+            .{ prefix, symbol },
+        );
+    }
+
+    fn property(
+        self: *Self,
+        prefix: []const u8,
+        symbol: []const u8,
+        name: []const u8,
+    ) !void {
+        try self.writer.print(
+            "{s}" ++ Color.branch ++ "{s}" ++
+                Color.property ++ " {s}" ++ Color.reset ++ "",
+            .{ prefix, symbol, name },
+        );
+    }
+
+    fn value(self: *Self, comptime fmt: []const u8, args: anytype) !void {
+        try self.writer.print(
+            " " ++ Color.value ++ fmt ++ Color.reset,
+            args,
+        );
     }
 };
 
@@ -384,7 +636,12 @@ pub const AST = struct {
             var stmt = self.stmts.items[i];
             stmt.deinit(self.allocator);
         }
-        
+
         self.stmts.deinit(self.allocator);
+    }
+
+    pub fn debug(self: *Self, writter: *std.Io.Writer) !void {
+        var debug_writter = AstDebugWriter.init(self.allocator, writter);
+        try debug_writter.debug(&self.stmts);
     }
 };

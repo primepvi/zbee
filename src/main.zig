@@ -10,7 +10,7 @@ pub fn main(init: std.process.Init) !void {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
 
-    var source = try Source.initFromFile(arena.allocator(), init.io, "examples/all.bee");
+    var source = try Source.initFromFile(arena.allocator(), init.io, "examples/ast.bee");
     defer source.deinit(arena.allocator());
     
     var tokens = std.ArrayList(Token).empty;
@@ -43,9 +43,12 @@ pub fn main(init: std.process.Init) !void {
         std.process.exit(1);
     }      
 
-    for (ast.stmts.items) |stmt| {
-        std.debug.print("{}\n", .{stmt});
-    }
+    var allocating = std.Io.Writer.Allocating.init(arena.allocator());
+    defer allocating.deinit();
+    try ast.debug(&allocating.writer);
+
+    const response = try allocating.toOwnedSlice();
+    std.debug.print("{s}", .{response});
 
     var checker_bag = DiagnosticBag.init(arena.allocator(), &source);
     defer checker_bag.deinit();

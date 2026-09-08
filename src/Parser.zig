@@ -176,10 +176,11 @@ pub const Parser = struct {
             if (self.peek().kind == .comma_symbol) {
                 _ = self.eat();
             } else {
-                close_paren_token = try self.expectToken(.close_paren_symbol, ")");
                 break;
             }
         }
+
+        close_paren_token = try self.expectToken(.close_paren_symbol, ")");
 
         const span: SourceSpan = .{
             .line = identifier_token.span.line,
@@ -365,7 +366,7 @@ pub const Parser = struct {
     fn parseFunctionDeclStmt(self: *Self) anyerror!Stmt {
         const keyword_token = self.eat();
         const identifier_token = try self.expectToken(.identifier, "function name");
-        _ = try self.expectToken(.close_paren_symbol, ")");
+        _ = try self.expectToken(.open_paren_symbol, "(");
 
         var params = std.ArrayList(FunctionDeclParam).empty;
         while (self.hasMoreTokens() and self.peek().kind != .close_paren_symbol) {
@@ -389,11 +390,11 @@ pub const Parser = struct {
             if (self.peek().kind == .comma_symbol) {
                 _ = self.eat();
             } else {
-                _ = try self.expectToken(.close_paren_symbol, ")");
                 break;
             }
         }
 
+        _ = try self.expectToken(.close_paren_symbol, ")");
         const type_annotation = try self.parseTypeAnnotation();
         const body = try self.allocator.create(Stmt);
         if (self.peek().kind == .arrow_symbol) {
@@ -489,8 +490,8 @@ pub const Parser = struct {
         else
             false;
 
-        if (is_consequent_block and (alternate != null or is_alternate_valid)) {
-            _ = self.eat();
+        if (is_consequent_block and (alternate == null or !is_alternate_valid)) {
+            _ = try self.expectToken(.end_keyword, "end");
         }
 
         const end_span = if (alternate) |alt|

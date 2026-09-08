@@ -24,7 +24,9 @@ fn parse(allocator: std.mem.Allocator, source: *const Source, bag: *DiagnosticBa
         try tokens.append(allocator, current);
     }
 
+    try bag.debug();
     try std.testing.expectEqual(0, bag.diagnostics.items.len);
+
     var parser = Parser.init(allocator, source, tokens, bag);
     return try parser.parse();
 }
@@ -48,7 +50,8 @@ test "variable decl stmt parsing" {
 
     var ast = try parse(allocator, &source, &bag);
     defer ast.deinit();
-    
+
+    try bag.debug();
     try std.testing.expect(bag.diagnostics.items.len == 0);
     try std.testing.expect(ast.stmts.items.len == 6);
 
@@ -62,7 +65,7 @@ test "variable decl stmt parsing" {
     const expects = [_]Expected{
         .{ .keyword_kind = .let_keyword, .identifier_lexeme = "n1", .typing_lexeme = null, .typing_nullable = null },
         .{ .keyword_kind = .let_keyword, .identifier_lexeme = "n2", .typing_lexeme = "int", .typing_nullable = false },
-        .{ .keyword_kind = .let_keyword, .identifier_lexeme = "n3", .typing_lexeme = "int", .typing_nullable = true },        
+        .{ .keyword_kind = .let_keyword, .identifier_lexeme = "n3", .typing_lexeme = "int", .typing_nullable = true },
         .{ .keyword_kind = .const_keyword, .identifier_lexeme = "s1", .typing_lexeme = null, .typing_nullable = null },
         .{ .keyword_kind = .const_keyword, .identifier_lexeme = "s2", .typing_lexeme = "string", .typing_nullable = false },
         .{ .keyword_kind = .const_keyword, .identifier_lexeme = "s3", .typing_lexeme = "string", .typing_nullable = true },
@@ -76,8 +79,110 @@ test "variable decl stmt parsing" {
         if (stmt.type_annotation != null) {
             try std.testing.expectEqualStrings(expected.typing_lexeme.?, stmt.type_annotation.?.identifier_token.lexeme);
             try std.testing.expect(stmt.type_annotation.?.nullable == expected.typing_nullable);
-        }        
+        }
     }
+}
+
+test "function decl stmt parsing" {
+    const allocator = std.testing.allocator;
+    const code =
+        \\fn sum(a: int, b:int): void
+        \\   echo a + b
+        \\end
+        \\
+        \\fn double(x: int): int -> return x * 2
+    ;
+
+    var source = try Source.init(allocator, "test.bee", code);
+    defer source.deinit(allocator);
+
+    var bag = DiagnosticBag.init(allocator, &source);
+    defer bag.deinit();
+
+    var ast = try parse(allocator, &source, &bag);
+    defer ast.deinit();
+
+    try bag.debug();
+    try std.testing.expect(bag.diagnostics.items.len == 0);
+    try std.testing.expect(ast.stmts.items.len == 2);
+
+    const Expected = struct {
+        function_name: []const u8,
+        params_typings_name: []const []const u8,
+        params_name: []const []const u8,
+        return_typing_name: []const u8,
+        body_kind: StmtKind,
+    };
+
+    const expects = [_]Expected{ .{
+        .function_name = "sum",
+        .params_typings_name = &.{ "int", "int" },
+        .params_name = &.{ "a", "b" },
+        .return_typing_name = "void",
+        .body_kind = .block_stmt,
+    }, .{
+        .function_name = "double",
+        .params_typings_name = &.{"int"},
+        .params_name = &.{"x"},
+        .return_typing_name = "int",
+        .body_kind = .return_stmt,
+    } };
+
+    for (0..ast.stmts.items.len) |i| {
+        const stmt = ast.stmts.items[i];
+        const expected = expects[i];
+        try std.testing.expectEqual(.function_decl_stmt, std.meta.activeTag(stmt));
+        try std.testing.expectEqualStrings(expected.function_name, stmt.function_decl_stmt.identifier_token.lexeme);
+        try std.testing.expectEqual(expected.params_typings_name.len, stmt.function_decl_stmt.params.items.len);
+
+        for (0..expected.params_typings_name.len) |j| {
+            const param = stmt.function_decl_stmt.params.items[j];
+            try std.testing.expectEqualStrings(expected.params_typings_name[j], param.type_annotation.identifier_token.lexeme);
+            try std.testing.expectEqualStrings(expected.params_name[j], param.identifier_token.lexeme);
+        }
+
+        try std.testing.expectEqualStrings(expected.return_typing_name, stmt.function_decl_stmt.type_annotation.identifier_token.lexeme);
+        try std.testing.expectEqual(expected.body_kind, std.meta.activeTag(stmt.function_decl_stmt.body.*));
+    }
+}
+
+test "return stmt parsing" {
+    const allocator = std.testing.allocator;
+    const code =
+        \\ return 10
+        \\ return "Hello, World!"
+        \\ return bee
+        \\ return
+    ;
+
+    var source = try Source.init(allocator, "test.bee", code);
+    defer source.deinit(allocator);
+
+    var bag = DiagnosticBag.init(allocator, &source);
+    defer bag.deinit();
+
+    var ast = try parse(allocator, &source, &bag);
+    defer ast.deinit();
+
+    try bag.debug();
+    try std.testing.expect(bag.diagnostics.items.len == 0);
+    try std.testing.expect(ast.stmts.items.len == 4);
+
+    const r0 = ast.stmts.items[0];
+    try std.testing.expectEqual(.return_stmt, std.meta.activeTag(r0));
+    try std.testing.expectEqual(.literal_expr, std.meta.activeTag(r0.return_stmt.expr.?));
+
+    const r1 = ast.stmts.items[1];
+    try std.testing.expectEqual(.return_stmt, std.meta.activeTag(r1));
+    try std.testing.expectEqual(.literal_expr, std.meta.activeTag(r1.return_stmt.expr.?));
+
+    const r2 = ast.stmts.items[2];
+    try std.testing.expectEqual(.return_stmt, std.meta.activeTag(r2));
+    try std.testing.expectEqual(.identifier_expr, std.meta.activeTag(r2.return_stmt.expr.?));
+
+    const r3 = ast.stmts.items[3];
+    try std.testing.expectEqual(.return_stmt, std.meta.activeTag(r3));
+    try std.testing.expectEqual(null, r3.return_stmt.expr);
 }
 
 test "expr stmt parsing" {
@@ -98,6 +203,7 @@ test "expr stmt parsing" {
     var ast = try parse(allocator, &source, &bag);
     defer ast.deinit();
 
+    try bag.debug();
     try std.testing.expect(bag.diagnostics.items.len == 0);
     try std.testing.expect(ast.stmts.items.len == 4);
 
@@ -131,6 +237,7 @@ test "echo stmt parsing" {
     var ast = try parse(allocator, &source, &bag);
     defer ast.deinit();
 
+    try bag.debug();
     try std.testing.expect(bag.diagnostics.items.len == 0);
     try std.testing.expect(ast.stmts.items.len == 4);
 
@@ -147,13 +254,35 @@ test "echo stmt parsing" {
     }
 }
 
-test "return stmt parsing" {
+test "if stmt parsing" {
     const allocator = std.testing.allocator;
     const code =
-        \\ return 10
-        \\ return "Hello, World!"
-        \\ return bee
-        \\ return
+        \\if a > b then
+        \\   echo "a > b"
+        \\end
+        \\
+        \\if a > b -> echo "a > b"
+        \\
+        \\if a > b then
+        \\   echo "a > b"
+        \\else
+        \\   echo "a <= b"
+        \\end
+        \\
+        \\if a > b -> echo "a > b"
+        \\else -> echo "a <= b"
+        \\
+        \\if a > b then
+        \\   echo "a > b"
+        \\else if a < b then
+        \\   echo "a < b"
+        \\else
+        \\   echo "a == b"
+        \\end
+        \\
+        \\if a > b -> echo "a > b"
+        \\else if a < b -> echo "a < b"
+        \\else -> echo "a == "b"
     ;
 
     var source = try Source.init(allocator, "test.bee", code);
@@ -164,23 +293,8 @@ test "return stmt parsing" {
 
     var ast = try parse(allocator, &source, &bag);
     defer ast.deinit();
-
+    
+    try bag.debug();
     try std.testing.expect(bag.diagnostics.items.len == 0);
-    try std.testing.expect(ast.stmts.items.len == 4);
-
-    const r0 = ast.stmts.items[0];
-    try std.testing.expectEqual(.return_stmt, std.meta.activeTag(r0));
-    try std.testing.expectEqual(.literal_expr, std.meta.activeTag(r0.return_stmt.expr.?));
-
-    const r1 = ast.stmts.items[1];
-    try std.testing.expectEqual(.return_stmt, std.meta.activeTag(r1));
-    try std.testing.expectEqual(.literal_expr, std.meta.activeTag(r1.return_stmt.expr.?));
-
-    const r2 = ast.stmts.items[2];
-    try std.testing.expectEqual(.return_stmt, std.meta.activeTag(r2));
-    try std.testing.expectEqual(.identifier_expr, std.meta.activeTag(r2.return_stmt.expr.?));
-
-    const r3 = ast.stmts.items[3];
-    try std.testing.expectEqual(.return_stmt, std.meta.activeTag(r3));
-    try std.testing.expectEqual(null, r3.return_stmt.expr);
+    try std.testing.expect(ast.stmts.items.len == 6);
 }

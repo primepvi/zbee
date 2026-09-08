@@ -1,0 +1,14 @@
+let age = 18
+const name: string = "John Doe"
+
+fn sum(a: int, b: int): int -> a + b
+fn hello(): void -> echo "Hello, World"
+
+fn main(): void
+   hello()
+end
+
+fn double(x: int): int
+   return x * 2
+end
+
