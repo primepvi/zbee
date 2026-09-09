@@ -432,11 +432,12 @@ const AstDebugWriter = struct {
 
                 try self.property(child_prefix, common, "Left:\n");
                 try self.debugExpr(b.left, expr_prefix, true);
-                try self.property(child_prefix, common, "Right:\n");
-                try self.debugExpr(b.right, expr_prefix, true);
-
+                
                 try self.property(child_prefix, last, "Operator:");
                 try self.value("\"{s}\"\n", .{b.operator_token.lexeme});
+
+                try self.property(child_prefix, common, "Right:\n");
+                try self.debugExpr(b.right, expr_prefix, true);
             },
             else => {},
         }
@@ -521,7 +522,7 @@ const AstDebugWriter = struct {
                 }
             },
             .return_stmt => |r| {
-                try self.statement(prefix, last, "Return Statement");
+                try self.statement(prefix, symbol, "Return Statement");
                 const child_prefix = try self.childPrefix(prefix, is_last);
                 defer self.allocator.free(child_prefix);
 
@@ -533,7 +534,7 @@ const AstDebugWriter = struct {
                 }
             },
             .expr_stmt => |e| {
-                try self.statement(prefix, last, "Expression Statement");
+                try self.statement(prefix, symbol, "Expression Statement");
                 const child_prefix = try self.childPrefix(prefix, is_last);
                 defer self.allocator.free(child_prefix);
 
@@ -543,7 +544,7 @@ const AstDebugWriter = struct {
                 try self.debugExpr(&e.expr, expr_prefix, true);
             },
             .echo_stmt => |e| {
-                try self.statement(prefix, last, "Echo Statement");
+                try self.statement(prefix, symbol, "Echo Statement");
                 const child_prefix = try self.childPrefix(prefix, is_last);
                 defer self.allocator.free(child_prefix);
 
@@ -551,6 +552,26 @@ const AstDebugWriter = struct {
                 const expr_prefix = try self.childPrefix(child_prefix, true);
                 defer self.allocator.free(expr_prefix);
                 try self.debugExpr(&e.message, expr_prefix, true);
+            },
+            .if_stmt => |i| {
+                try self.statement(prefix, symbol, "If Statement");
+                const child_prefix = try self.childPrefix(prefix, is_last);
+                defer self.allocator.free(child_prefix);
+
+                try self.property(child_prefix, common, "Condition:\n");
+                const expr_prefix = try self.childPrefix(child_prefix, is_last);
+                defer self.allocator.free(expr_prefix);
+                try self.debugExpr(&i.condition, expr_prefix, true);
+                if (i.alternate) |alt| {
+                    try self.property(child_prefix, common, "Alternate:\n");
+                    try self.debugStmt(alt, expr_prefix, true);
+                }
+
+                const inner_prefix = try self.childPrefix(child_prefix, true);
+                defer self.allocator.free(inner_prefix);
+
+                try self.property(child_prefix, last, "Consequent:\n");
+                try self.debugStmt(i.consequent, inner_prefix, true);
             },
             else => {},
         }

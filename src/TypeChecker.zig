@@ -22,17 +22,20 @@ pub const TypeChecker = struct {
     allocator: std.mem.Allocator,
     ast: *const AST,
     bag: *DiagnosticBag,
-    symbols: SymbolTable,
+    symbols: *SymbolTable,
     expected_return_type: Type,
 
     const Self = @This();
 
-    pub fn init(allocator: std.mem.Allocator, ast: *const AST, bag: *DiagnosticBag) Self {
+    pub fn init(allocator: std.mem.Allocator, ast: *const AST, bag: *DiagnosticBag) !Self {
+        const symbols = try allocator.create(SymbolTable);
+        symbols.* = SymbolTable.init(allocator, .global, null);
+        
         return .{
             .allocator = allocator,
             .ast = ast,
             .bag = bag,
-            .symbols = SymbolTable.init(allocator, .global, null),
+            .symbols = symbols,
             .expected_return_type = Type.invalid(),
         };
     }
@@ -133,7 +136,10 @@ pub const TypeChecker = struct {
         }
 
         var param_types = try std.ArrayList(Type).initCapacity(self.allocator, decl.params.capacity);
-        var scope = SymbolTable.init(self.allocator, .function, &self.symbols);
+        var scope = try self.allocator.create(SymbolTable);
+        defer self.allocator.destroy(scope);
+        scope.* = SymbolTable.init(self.allocator, .function, self.symbols);
+        
         for (decl.params.items) |param| {
             const param_type = Type.fromAnnotation(param.type_annotation);
             if (param_type.isEmpty() or param_type.isInvalid()) {
@@ -173,10 +179,12 @@ pub const TypeChecker = struct {
 
         const prev_return_type = self.expected_return_type;
         self.expected_return_type = return_type.*;
+
+        const previous_symbols = self.symbols;
         self.symbols = scope;
 
         const flow = try self.checkStmt(decl.body);
-        self.symbols = scope.parent.?.*;
+        self.symbols = previous_symbols;
         self.expected_return_type = prev_return_type;
 
         if (!return_type.isEmpty() and flow.can_continue) {
@@ -190,7 +198,11 @@ pub const TypeChecker = struct {
 
     fn checkBlockStmt(self: *Self, stmt: *const Stmt) anyerror!Flow {
         const block = stmt.block_stmt;
-        const scope = SymbolTable.init(self.allocator, .block, &self.symbols);
+        const scope = try self.allocator.create(SymbolTable);
+        defer self.allocator.destroy(scope);
+        scope.* = SymbolTable.init(self.allocator, .block, self.symbols);
+
+        const previous_symbols = self.symbols;
         self.symbols = scope;
 
         var flow: Flow = .{ .can_continue = true };
@@ -201,8 +213,7 @@ pub const TypeChecker = struct {
             flow = try self.checkStmt(&s);
         }
 
-        self.symbols = scope.parent.?.*;
-
+        self.symbols = previous_symbols;
         return flow;
     }
 
@@ -233,19 +244,27 @@ pub const TypeChecker = struct {
             return .{ .can_continue = true };
         }
 
-        const scope = SymbolTable.init(self.allocator, .block, &self.symbols);
+        const scope = try self.allocator.create(SymbolTable);
+        defer self.allocator.destroy(scope);
+        scope.* = SymbolTable.init(self.allocator, .block, self.symbols);
+
+        const previous_symbols = self.symbols;
         self.symbols = scope;
 
         const flow = try self.checkStmt(while_stmt.body);
-        self.symbols = scope.parent.?.*;
+        self.symbols = previous_symbols;
 
         return flow;
     }
 
     fn checkForStmt(self: *Self, stmt: *const Stmt) anyerror!Flow {
         const for_stmt = stmt.for_stmt;
-        const scope = SymbolTable.init(self.allocator, .block, &self.symbols);
-        self.symbols = scope;
+        const scope = try self.allocator.create(SymbolTable);
+        defer self.allocator.destroy(scope);
+        scope.* = SymbolTable.init(self.allocator, .block, self.symbols);
+
+        const previous_symbols = self.symbols;
+        self.symbols = previous_symbols;
         _ = try self.checkStmt(for_stmt.init);
 
         const condition_type = try self.checkExpr(&for_stmt.condition);
@@ -257,7 +276,7 @@ pub const TypeChecker = struct {
         _ = try self.checkExpr(&for_stmt.update);
 
         const flow = try self.checkStmt(for_stmt.body);
-        self.symbols = scope.parent.?.*;
+        self.symbols = previous_symbols;
         return flow;
     }
 
@@ -265,7 +284,7 @@ pub const TypeChecker = struct {
         const ret = stmt.return_stmt;
         var function_scope = self.symbols;
         while (function_scope.parent != null and function_scope.scope != .function) {
-            function_scope = function_scope.parent.?.*;
+            function_scope = function_scope.parent.?;
         }
 
         if (function_scope.scope != .function) {
