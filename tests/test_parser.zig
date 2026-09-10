@@ -282,7 +282,7 @@ test "if stmt parsing" {
         \\
         \\if a > b -> echo "a > b"
         \\else if a < b -> echo "a < b"
-        \\else -> echo "a == "b"
+        \\else -> echo "a == b"
     ;
 
     var source = try Source.init(allocator, "test.bee", code);
@@ -293,8 +293,8 @@ test "if stmt parsing" {
 
     var ast = try parse(allocator, &source, &bag);
     defer ast.deinit();
-    
+
     try bag.debug();
     try std.testing.expect(bag.diagnostics.items.len == 0);
-    try std.testing.expect(ast.stmts.items.len == 6);
+    try std.testing.expectEqual(6, ast.stmts.items.len);
 }

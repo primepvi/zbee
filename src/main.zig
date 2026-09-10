@@ -12,18 +12,18 @@ pub fn main(init: std.process.Init) !void {
 
     var source = try Source.initFromFile(arena.allocator(), init.io, "examples/ast.bee");
     defer source.deinit(arena.allocator());
-    
+
     var tokens = std.ArrayList(Token).empty;
     defer tokens.deinit(arena.allocator());
-    
+
     var lexer_bag = DiagnosticBag.init(arena.allocator(), &source);
     defer lexer_bag.deinit();
-    
+
     var lexer = Lexer.init(&source, &lexer_bag);
     var current: Token = undefined;
     while (current.kind != .eof) {
         current = try lexer.nextToken();
-        try tokens.append(arena.allocator(), current);        
+        try tokens.append(arena.allocator(), current);
     }
 
     if (lexer_bag.hasErrors()) {
@@ -33,15 +33,15 @@ pub fn main(init: std.process.Init) !void {
 
     var parser_bag = DiagnosticBag.init(arena.allocator(), &source);
     defer parser_bag.deinit();
-    
+
     var parser = Parser.init(arena.allocator(), &source, tokens, &parser_bag);
     var ast = try parser.parse();
     defer ast.deinit();
-    
+
     if (parser_bag.hasErrors()) {
         try parser_bag.debug();
         std.process.exit(1);
-    }      
+    }
 
     var allocating = std.Io.Writer.Allocating.init(arena.allocator());
     defer allocating.deinit();
@@ -52,11 +52,11 @@ pub fn main(init: std.process.Init) !void {
 
     var checker_bag = DiagnosticBag.init(arena.allocator(), &source);
     defer checker_bag.deinit();
-    
+
     var checker = try TypeChecker.init(arena.allocator(), &ast, &checker_bag);
     try checker.check();
     if (checker_bag.hasErrors()) {
-        try checker_bag.debug();
+        //try checker_bag.debug();
         std.process.exit(1);
     }
 }
