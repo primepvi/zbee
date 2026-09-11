@@ -91,6 +91,7 @@ test "function decl stmt parsing" {
         \\end
         \\
         \\fn double(x: int): int -> return x * 2
+        \\fn hello(): void -> echo "Hello, World"
     ;
 
     var source = try Source.init(allocator, "test.bee", code);
@@ -104,7 +105,7 @@ test "function decl stmt parsing" {
 
     try bag.debug();
     try std.testing.expect(bag.diagnostics.items.len == 0);
-    try std.testing.expect(ast.stmts.items.len == 2);
+    try std.testing.expect(ast.stmts.items.len == 3);
 
     const Expected = struct {
         function_name: []const u8,
@@ -114,19 +115,29 @@ test "function decl stmt parsing" {
         body_kind: StmtKind,
     };
 
-    const expects = [_]Expected{ .{
-        .function_name = "sum",
-        .params_typings_name = &.{ "int", "int" },
-        .params_name = &.{ "a", "b" },
-        .return_typing_name = "void",
-        .body_kind = .block_stmt,
-    }, .{
-        .function_name = "double",
-        .params_typings_name = &.{"int"},
-        .params_name = &.{"x"},
-        .return_typing_name = "int",
-        .body_kind = .return_stmt,
-    } };
+    const expects = [_]Expected{
+        .{
+            .function_name = "sum",
+            .params_typings_name = &.{ "int", "int" },
+            .params_name = &.{ "a", "b" },
+            .return_typing_name = "void",
+            .body_kind = .block_stmt,
+        },
+        .{
+            .function_name = "double",
+            .params_typings_name = &.{"int"},
+            .params_name = &.{"x"},
+            .return_typing_name = "int",
+            .body_kind = .return_stmt,
+        },
+        .{
+            .function_name = "hello",
+            .params_typings_name = &.{},
+            .params_name = &.{},
+            .return_typing_name = "void",
+            .body_kind = .echo_stmt,
+        },
+    };
 
     for (0..ast.stmts.items.len) |i| {
         const stmt = ast.stmts.items[i];
@@ -256,6 +267,7 @@ test "echo stmt parsing" {
 
 test "if stmt parsing" {
     const allocator = std.testing.allocator;
+
     const code =
         \\if a > b then
         \\   echo "a > b"
@@ -297,4 +309,125 @@ test "if stmt parsing" {
     try bag.debug();
     try std.testing.expect(bag.diagnostics.items.len == 0);
     try std.testing.expectEqual(6, ast.stmts.items.len);
+
+    const Expected = struct {
+        consequent_kind: StmtKind,
+        has_alternate: bool,
+        alternate_kind: ?StmtKind,
+        alternate_consequent_kind: ?StmtKind,
+        alternate_has_alternate: bool,
+        alternate_alternate_kind: ?StmtKind,
+    };
+
+    const expects = [_]Expected{
+        .{
+            .consequent_kind = .block_stmt,
+            .has_alternate = false,
+            .alternate_kind = null,
+            .alternate_consequent_kind = null,
+            .alternate_has_alternate = false,
+            .alternate_alternate_kind = null,
+        },
+        .{
+            .consequent_kind = .echo_stmt,
+            .has_alternate = false,
+            .alternate_kind = null,
+            .alternate_consequent_kind = null,
+            .alternate_has_alternate = false,
+            .alternate_alternate_kind = null,
+        },
+        .{
+            .consequent_kind = .block_stmt,
+            .has_alternate = true,
+            .alternate_kind = .block_stmt,
+            .alternate_consequent_kind = null,
+            .alternate_has_alternate = false,
+            .alternate_alternate_kind = null,
+        },
+        .{
+            .consequent_kind = .echo_stmt,
+            .has_alternate = true,
+            .alternate_kind = .echo_stmt,
+            .alternate_consequent_kind = null,
+            .alternate_has_alternate = false,
+            .alternate_alternate_kind = null,
+        },
+        .{
+            .consequent_kind = .block_stmt,
+            .has_alternate = true,
+            .alternate_kind = .if_stmt,
+            .alternate_consequent_kind = .block_stmt,
+            .alternate_has_alternate = true,
+            .alternate_alternate_kind = .block_stmt,
+        },
+        .{
+            .consequent_kind = .echo_stmt,
+            .has_alternate = true,
+            .alternate_kind = .if_stmt,
+            .alternate_consequent_kind = .echo_stmt,
+            .alternate_has_alternate = true,
+            .alternate_alternate_kind = .echo_stmt,
+        },
+    };
+
+    for (0..ast.stmts.items.len) |i| {
+        const stmt = ast.stmts.items[i].if_stmt;
+        const expected = expects[i];
+        try std.testing.expectEqual(expected.consequent_kind, std.meta.activeTag(stmt.consequent.*));
+        try std.testing.expectEqual(expected.has_alternate, stmt.alternate != null);
+        if (!expected.has_alternate) continue;
+
+        const alternate = stmt.alternate.?;
+        const alternate_kind = std.meta.activeTag(alternate.*);
+        try std.testing.expectEqual(expected.alternate_kind, alternate_kind);
+        try std.testing.expectEqual(expected.alternate_has_alternate, alternate_kind == .if_stmt and alternate.if_stmt.alternate != null);
+
+        if (!expected.alternate_has_alternate) continue;
+        try std.testing.expectEqual(expected.alternate_consequent_kind, std.meta.activeTag(alternate.if_stmt.consequent.*));
+        const alternate_alternate = alternate.if_stmt.alternate.?;
+        const alternate_alternate_kind = std.meta.activeTag(alternate_alternate.*);
+        try std.testing.expectEqual(expected.alternate_alternate_kind, alternate_alternate_kind);
+    }
+}
+
+test "block stmt parsing" {
+    const allocator = std.testing.allocator;
+    const code =
+        \\if not false then
+        \\   10
+        \\   "Hello, World!"
+        \\   message
+        \\   5 + 5
+        \\end
+    ;
+
+    var source = try Source.init(allocator, "test.bee", code);
+    defer source.deinit(allocator);
+
+    var bag = DiagnosticBag.init(allocator, &source);
+    defer bag.deinit();
+
+    var ast = try parse(allocator, &source, &bag);
+    defer ast.deinit();
+
+    try bag.debug();
+    try std.testing.expect(bag.diagnostics.items.len == 0);
+    try std.testing.expect(ast.stmts.items.len == 1);
+
+    const stmt = ast.stmts.items[0];
+    try std.testing.expectEqual(.if_stmt, std.meta.activeTag(stmt));
+    try std.testing.expectEqual(.block_stmt, std.meta.activeTag(stmt.if_stmt.consequent.*));
+
+    const block = stmt.if_stmt.consequent.block_stmt;
+    const expr_kinds = [_]ExprKind{
+        .literal_expr,    .literal_expr,
+        .identifier_expr, .binary_expr,
+    };
+
+    try std.testing.expectEqual(expr_kinds.len, block.items.items.len);
+    for (0..block.items.items.len) |i| {
+        const inner_stmt = block.items.items[i];
+        try std.testing.expectEqual(.expr_stmt, std.meta.activeTag(inner_stmt));
+        try std.testing.expectEqual(expr_kinds[i], std.meta.activeTag(inner_stmt.expr_stmt.expr));
+    }
 }
