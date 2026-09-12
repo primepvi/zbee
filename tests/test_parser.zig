@@ -527,3 +527,106 @@ test "for stmt parsing" {
         try std.testing.expectEqual(expected.update_kind, std.meta.activeTag(for_stmt.update));
     }
 }
+
+test "literal expr parsing" {
+    const allocator = std.testing.allocator;
+    const code =
+        \\"Hello, World"
+        \\10
+        \\true
+        \\false        
+        \\null
+    ;
+
+    var source = try Source.init(allocator, "test.bee", code);
+    defer source.deinit(allocator);
+
+    var bag = DiagnosticBag.init(allocator, &source);
+    defer bag.deinit();
+
+    var ast = try parse(allocator, &source, &bag);
+    defer ast.deinit();
+
+    try bag.debug();
+    try std.testing.expect(bag.diagnostics.items.len == 0);
+    try std.testing.expect(ast.stmts.items.len == 5);
+
+    const expects = [_]TokenKind{
+        .string_literal,
+        .number_literal,
+        .true_keyword,
+        .false_keyword,
+        .null_keyword,
+    };
+
+    for (0..ast.stmts.items.len) |i| {
+        const stmt = ast.stmts.items[i].expr_stmt;
+        try std.testing.expectEqual(.literal_expr, std.meta.activeTag(stmt.expr));
+        try std.testing.expectEqual(expects[i], stmt.expr.literal_expr.value_token.kind);
+    }
+}
+
+test "identifier expr parsing" {
+    const allocator = std.testing.allocator;
+    const code =
+        \\bee
+        \\zbee
+    ;
+
+    var source = try Source.init(allocator, "test.bee", code);
+    defer source.deinit(allocator);
+
+    var bag = DiagnosticBag.init(allocator, &source);
+    defer bag.deinit();
+
+    var ast = try parse(allocator, &source, &bag);
+    defer ast.deinit();
+
+    try bag.debug();
+    try std.testing.expect(bag.diagnostics.items.len == 0);
+    try std.testing.expect(ast.stmts.items.len == 2);
+
+    const expects = [_][]const u8{
+        "bee",
+        "zbee",
+    };
+
+    for (0..ast.stmts.items.len) |i| {
+        const stmt = ast.stmts.items[i].expr_stmt;
+        try std.testing.expectEqual(.identifier_expr, std.meta.activeTag(stmt.expr));
+        try std.testing.expectEqualStrings(expects[i], stmt.expr.identifier_expr.identifier_token.lexeme);
+    }
+}
+
+test "assignment expr parsing" {
+    const allocator = std.testing.allocator;
+    const code =
+        \\bee = "good language"
+        \\age = 18
+    ;
+
+    var source = try Source.init(allocator, "test.bee", code);
+    defer source.deinit(allocator);
+
+    var bag = DiagnosticBag.init(allocator, &source);
+    defer bag.deinit();
+
+    var ast = try parse(allocator, &source, &bag);
+    defer ast.deinit();
+
+    try bag.debug();
+    try std.testing.expect(bag.diagnostics.items.len == 0);
+    try std.testing.expect(ast.stmts.items.len == 2);
+
+    const expects = [_][]const u8{
+        "bee",
+        "age",
+    };
+
+    for (0..ast.stmts.items.len) |i| {
+        const stmt = ast.stmts.items[i].expr_stmt;
+        try std.testing.expectEqual(.assignment_expr, std.meta.activeTag(stmt.expr));
+        try std.testing.expectEqual(.literal_expr, std.meta.activeTag(stmt.expr.assignment_expr.value.*));
+        try std.testing.expectEqualStrings(expects[i], stmt.expr.assignment_expr.identifier_token.lexeme);
+    }
+}
