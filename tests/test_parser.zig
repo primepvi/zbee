@@ -431,3 +431,99 @@ test "block stmt parsing" {
         try std.testing.expectEqual(expr_kinds[i], std.meta.activeTag(inner_stmt.expr_stmt.expr));
     }
 }
+
+test "while stmt parsing" {
+    const allocator = std.testing.allocator;
+    const code =
+        \\while i < 10 do
+        \\   i = i + 1
+        \\   echo i
+        \\end
+        \\
+        \\while true -> echo "Hello, World"
+    ;
+
+    var source = try Source.init(allocator, "test.bee", code);
+    defer source.deinit(allocator);
+
+    var bag = DiagnosticBag.init(allocator, &source);
+    defer bag.deinit();
+
+    var ast = try parse(allocator, &source, &bag);
+    defer ast.deinit();
+
+    try bag.debug();
+    try std.testing.expect(bag.diagnostics.items.len == 0);
+    try std.testing.expect(ast.stmts.items.len == 2);
+
+    const Expected = struct { condition_kind: ExprKind, body_kind: StmtKind };
+    const expects = [_]Expected{
+        .{ .condition_kind = .binary_expr, .body_kind = .block_stmt },
+        .{ .condition_kind = .literal_expr, .body_kind = .echo_stmt },
+    };
+
+    for (0..ast.stmts.items.len) |i| {
+        const stmt = ast.stmts.items[i];
+        const expected = expects[i];
+
+        try std.testing.expectEqual(.while_stmt, std.meta.activeTag(stmt));
+        try std.testing.expectEqual(expected.condition_kind, std.meta.activeTag(stmt.while_stmt.condition));
+        try std.testing.expectEqual(expected.body_kind, std.meta.activeTag(stmt.while_stmt.body.*));
+    }
+}
+
+test "for stmt parsing" {
+    const allocator = std.testing.allocator;
+    const code =
+        \\for let i = 0, i < 10, i = i + 1 do
+        \\   echo i
+        \\end
+        \\
+        \\for let i = 0, i < 10, i = i + 1 -> echo i
+    ;
+
+    var source = try Source.init(allocator, "test.bee", code);
+    defer source.deinit(allocator);
+
+    var bag = DiagnosticBag.init(allocator, &source);
+    defer bag.deinit();
+
+    var ast = try parse(allocator, &source, &bag);
+    defer ast.deinit();
+
+    try bag.debug();
+    try std.testing.expect(bag.diagnostics.items.len == 0);
+    try std.testing.expect(ast.stmts.items.len == 2);
+
+    const Expected = struct {
+        condition_kind: ExprKind,
+        update_kind: ExprKind,
+        body_kind: StmtKind,
+    };
+
+    const expects = [_]Expected{
+        .{
+            .condition_kind = .binary_expr,
+            .body_kind = .block_stmt,
+            .update_kind = .assignment_expr,
+        },
+        .{
+            .condition_kind = .binary_expr,
+            .body_kind = .echo_stmt,
+            .update_kind = .assignment_expr,
+        },
+    };
+
+    for (0..ast.stmts.items.len) |i| {
+        const stmt = ast.stmts.items[i];
+        const expected = expects[i];
+
+        try std.testing.expectEqual(.for_stmt, std.meta.activeTag(stmt));
+
+        const for_stmt = stmt.for_stmt;
+        try std.testing.expectEqual(.variable_decl_stmt, std.meta.activeTag(for_stmt.init.*));
+        try std.testing.expectEqual(expected.condition_kind, std.meta.activeTag(for_stmt.condition));
+        try std.testing.expectEqual(expected.body_kind, std.meta.activeTag(for_stmt.body.*));
+        try std.testing.expectEqual(expected.update_kind, std.meta.activeTag(for_stmt.update));
+    }
+}
