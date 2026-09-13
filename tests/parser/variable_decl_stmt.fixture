@@ -1,0 +1,28 @@
+#region source
+const name = "John"
+const surname: string = "Doe"
+var age = 18
+var weight: int = 80
+#end
+
+#region ast
+(ast
+ (variable :test 'a)
+ (variable
+  :constant true
+  :identifier 'name  
+  :value (literal "John")) 
+ (variable
+  :constant true
+  :identifier 'surname
+  :typing (type 'string :nullable false)
+  :value (literal "Doe"))
+ (variable
+  :constant false
+  :identifier 'age
+  :value (literal 18))
+ (variable
+  :constant false
+  :identifier 'weight
+  :typing (type 'int :nullable true)))
+#end
