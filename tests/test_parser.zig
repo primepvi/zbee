@@ -630,3 +630,133 @@ test "assignment expr parsing" {
         try std.testing.expectEqualStrings(expects[i], stmt.expr.assignment_expr.identifier_token.lexeme);
     }
 }
+
+test "parenthesized expr parsing" {
+    const allocator = std.testing.allocator;
+    const code =
+        \\(1 + 1)
+        \\(true)
+    ;
+
+    var source = try Source.init(allocator, "test.bee", code);
+    defer source.deinit(allocator);
+
+    var bag = DiagnosticBag.init(allocator, &source);
+    defer bag.deinit();
+
+    var ast = try parse(allocator, &source, &bag);
+    defer ast.deinit();
+
+    try bag.debug();
+    try std.testing.expect(bag.diagnostics.items.len == 0);
+    try std.testing.expect(ast.stmts.items.len == 2);
+
+    const s0 = ast.stmts.items[0].expr_stmt;
+    try std.testing.expectEqual(.parenthesized_expr, std.meta.activeTag(s0.expr));
+    try std.testing.expectEqual(.binary_expr, std.meta.activeTag(s0.expr.parenthesized_expr.expr.*));
+
+    const s1 = ast.stmts.items[0].expr_stmt;
+    try std.testing.expectEqual(.parenthesized_expr, std.meta.activeTag(s1.expr));
+    try std.testing.expectEqual(.literal_expr, std.meta.activeTag(s1.expr.parenthesized_expr.expr.*));
+}
+
+test "when expr parsing" {
+    const allocator = std.testing.allocator;
+    const code =
+        \\when true then 1 otherwise 0
+        \\when age > 18 then "+18" otherwise "-=18"
+    ;
+
+    var source = try Source.init(allocator, "test.bee", code);
+    defer source.deinit(allocator);
+
+    var bag = DiagnosticBag.init(allocator, &source);
+    defer bag.deinit();
+
+    var ast = try parse(allocator, &source, &bag);
+    defer ast.deinit();
+
+    try bag.debug();
+    try std.testing.expect(bag.diagnostics.items.len == 0);
+    try std.testing.expect(ast.stmts.items.len == 2);
+
+    const Expected = struct {
+        condition_kind: ExprKind,
+        consequent_kind: ExprKind,
+        alternate_kind: ExprKind,
+    };
+
+    const expects = [_]Expected{
+        .{
+            .condition_kind = .literal_expr,
+            .consequent_kind = .literal_expr,
+            .alternate_kidn = .literal_expr,
+        },
+        .{
+            .condition_kind = .binary_expr,
+            .consequent_kind = .literal_expr,
+            .alternate_kind = .literal_expr,
+        },
+    };
+
+    for (0..ast.stmts.items.len) |i| {
+        const stmt = ast.stmts.items[i].expr_stmt;
+        const expected = expects[i];
+        try std.testing.expectEqual(.when_expr, std.meta.activeTag(stmt.expr));
+        try std.testing.expectEqual(expected.condition_kind, std.meta.activeTag(stmt.expr.when_expr.condition.*));
+        try std.testing.expectEqual(expected.consequent_kind, std.meta.activeTag(stmt.expr.when_expr.consequent.*));
+        try std.testing.expectEqual(expected.alternate_kind, std.meta.activeTag(stmt.expr.when_expr.alternate.*));
+    }
+}
+
+test "call expr parsing" {
+    const allocator = std.testing.allocator;
+    const code =
+        \\clamp(mag, 0, 10)
+        \\greetings()
+    ;
+
+    var source = try Source.init(allocator, "test.bee", code);
+    defer source.deinit(allocator);
+
+    var bag = DiagnosticBag.init(allocator, &source);
+    defer bag.deinit();
+
+    var ast = try parse(allocator, &source, &bag);
+    defer ast.deinit();
+
+    try bag.debug();
+    try std.testing.expect(bag.diagnostics.items.len == 0);
+    try std.testing.expect(ast.stmts.items.len == 2);
+
+    const Expected = struct {
+        param_count: usize,
+        param_expr_kinds: []ExprKind,
+    };
+
+    const expects = [_]Expected{
+        .{
+            .param_count = 3,
+            .param_expr_kinds = &.{
+                .identifier_expr,
+                .literal_expr,
+                .literal_expr,
+            },
+        },
+        .{
+            .param_count = 0,
+            .param_expr_kinds = &.{},
+        },
+    };
+
+    for (0..ast.stmts.items.len) |i| {
+        const stmt = ast.stmts.items[i].expr_stmt;
+        const expected = expects[i];
+        try std.testing.expectEqual(.call_expr, std.meta.activeTag(stmt.expr));
+        try std.testing.expectEqual(expected.param_count, stmt.expr.call_expr.arguments.items.len);
+
+        for (0..expected.param_expr_kinds) |j| {
+            try std.testing.expectEqual(expected.param_expr_kinds[j], std.meta.activeTag(stmt.expr.call_expr.arguments.items[j]));
+        }
+    }
+}
